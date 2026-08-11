@@ -378,6 +378,7 @@ export default function ReviewDetailPage() {
             comment={c}
             replies={repliesByParent.get(c.id) ?? []}
             onReply={handleReply}
+            onToggleResolved={handleToggleResolved}
           />
         ))}
 

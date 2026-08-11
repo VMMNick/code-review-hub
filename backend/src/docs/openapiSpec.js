@@ -447,7 +447,7 @@ export const openapiSpec = {
       }
     },
     '/notifications/read-all': {
-      patch: { tags: ['Notifications'], summary: 'Mark all of the caller\'s notifications as read', responses: { 200: { description: 'OK' } } }
+      patch: { tags: ['Notifications'], summary: 'Mark all of the caller\'s notifications as read', responses: { 204: { description: 'No content' } } }
     },
     '/notifications/{id}/read': {
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],

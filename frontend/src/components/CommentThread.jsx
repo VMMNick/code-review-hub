@@ -74,9 +74,16 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
           <button type="button" onClick={() => setReplying(true)}>
             Відповісти
           </button>
-          <button type="button" onClick={() => onToggleResolved(comment.id, !isResolved)}>
-            {isResolved ? 'Повернути в роботу' : 'Позначити вирішеним'}
-          </button>
+          {/* Guarded: only top-level comments can be resolved (backend
+              enforces this too), and a caller could in principle omit the
+              handler — this button previously rendered unconditionally and
+              threw if clicked without one, which happened to affect every
+              general (non-line) comment until this prop was wired up. */}
+          {onToggleResolved && !comment.parent_id && (
+            <button type="button" onClick={() => onToggleResolved(comment.id, !isResolved)}>
+              {isResolved ? 'Повернути в роботу' : 'Позначити вирішеним'}
+            </button>
+          )}
         </div>
       )}
     </div>

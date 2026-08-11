@@ -39,8 +39,13 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/code_review_hub
       REDIS_URL: redis://redis:6379
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
+      # No insecure fallback on purpose: NODE_ENV=production above means
+      # backend/src/config/env.js refuses to start if these two are unset —
+      # `docker compose up` should fail loudly here rather than silently run
+      # with a JWT secret that's sitting in this file in plain text. Set them
+      # in a .env file next to this compose file (see backend/.env.example).
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in your .env before running in this mode}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in your .env before running in this mode}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Optional — leave unset on the host to disable Sentry entirely.

@@ -1,11 +1,19 @@
 import 'dotenv/config';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+// `fallback` is a convenience default for local dev/tests only — it never
+// applies in production. Without this split, an operator who forgot to set
+// JWT_ACCESS_SECRET in prod would silently get 'dev-access-secret-change-me',
+// a value sitting in plain sight in this file, letting anyone forge valid
+// access tokens. Failing loudly on boot is much safer than failing silently
+// at request time. An empty string counts as "not set" too, since that's
+// what a misconfigured `${VAR:-}`-style shell/Compose interpolation produces.
 function required(name, fallback) {
-  const value = process.env[name] ?? fallback;
-  if (value === undefined) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value;
+  const value = process.env[name];
+  if (value !== undefined && value !== '') return value;
+  if (!isProduction && fallback !== undefined) return fallback;
+  throw new Error(`Missing required env var: ${name}`);
 }
 
 export const env = {

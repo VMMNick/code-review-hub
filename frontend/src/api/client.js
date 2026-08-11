@@ -10,6 +10,17 @@ export function getAccessToken() {
   return accessToken;
 }
 
+// AuthContext registers itself here so this module — which has no React
+// state of its own — can trigger a local logout when a silent refresh
+// fails. Without this, a stale accessToken stayed set after the failure
+// below, so the UI kept showing the user as logged in while every request
+// silently 401'd forever, with no way out short of a manual logout or
+// page reload.
+let authFailureHandler = null;
+export function setAuthFailureHandler(handler) {
+  authFailureHandler = handler;
+}
+
 api.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
@@ -29,7 +40,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
-      if (!refreshToken) return Promise.reject(error);
+      if (!refreshToken) {
+        authFailureHandler?.();
+        return Promise.reject(error);
+      }
 
       refreshPromise ??= api
         .post('/auth/refresh', { refreshToken })
@@ -45,6 +59,7 @@ api.interceptors.response.use(
         return api(original);
       } catch (refreshErr) {
         localStorage.removeItem('refreshToken');
+        authFailureHandler?.();
         return Promise.reject(refreshErr);
       }
     }

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, setAccessToken } from '../api/client.js';
+import { api, setAccessToken, setAuthFailureHandler } from '../api/client.js';
 import { connectSocket, disconnectSocket } from '../realtime/socket.js';
 
 const AuthContext = createContext(null);
@@ -12,6 +12,21 @@ export function AuthProvider({ children }) {
     // No silent "am I logged in" endpoint yet — we simply wait for the first
     // API call to trigger a refresh via the axios interceptor if needed.
     setLoading(false);
+  }, []);
+
+  // If a silent token refresh fails (expired/revoked refresh token — e.g.
+  // the user logged out elsewhere, or it just expired), the axios
+  // interceptor in api/client.js has no React state of its own to fix the
+  // "still shows logged in" UI, so it calls back in here. This is a local
+  // cleanup only (no /auth/logout round trip) since the refresh token is
+  // already confirmed dead server-side.
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      setAccessToken(null);
+      setUser(null);
+      disconnectSocket();
+    });
+    return () => setAuthFailureHandler(null);
   }, []);
 
   // The socket connects once here, app-wide, so notifications (and anything
