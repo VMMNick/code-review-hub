@@ -75,8 +75,9 @@ export async function deleteComment(req, res, next) {
     );
     const comment = rows[0];
     if (!comment) throw new HttpError(404, 'Comment not found');
-    if (comment.author_id !== req.user.id && req.user.role !== 'admin') {
-      throw new HttpError(403, 'Only the author or an admin can delete this comment');
+    const isProjectAdmin = review.projectRole === 'admin';
+    if (comment.author_id !== req.user.id && !isProjectAdmin && req.user.role !== 'admin') {
+      throw new HttpError(403, 'Only the author or a project admin can delete this comment');
     }
     // ON DELETE CASCADE on parent_id removes replies to this comment too.
     await pool.query('DELETE FROM comments WHERE id = $1', [comment.id]);

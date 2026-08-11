@@ -67,7 +67,14 @@ frontend/   React (Vite), react-router, axios
 - **Стан "хтось друкує" переїхав з in-memory `Map` у Redis** (`backend/src/realtime/typingStore.js`, hash `typing:{reviewId}`) — без цього кожен процес бачив би лише своїх локальних тайпістів і перезаписував би загальний список чужими неповними даними. TTL хеша (10с) самовідновлюється при кожному `typing:start`, як страховка на випадок аварійного завершення процесу без події `disconnect`.
 - `docker-compose.yml` — Postgres + Redis для локальної розробки (сервіси backend/frontend додаються повністю на Тижні 8).
 
+## Тиждень 7: ролі й права доступу, rate-limiting
+
+- `assertProjectAccess` тепер повертає ефективну роль користувача в проєкті (`role`): власник проєкту завжди діє як `admin`, інакше — `project_members.role`. Прокинуто далі як `review.projectRole` у `getReviewOrThrow`, щоб не робити зайвий запит.
+- Зміна статусу рев'ю (approve/changes_requested) — лише `reviewer` або `admin` проєкту; автор не може самостійно схвалити власне рев'ю.
+- Видалення рев'ю/коментаря — автор або `admin` проєкту (раніше перевірявся лише глобальний `users.role`, що не мало сенсу для командної роботи в межах конкретного проєкту).
+- Керування учасниками: `GET/POST /api/projects/:id/members`, `PATCH/DELETE /api/projects/:id/members/:userId` — лише `admin` проєкту; власника проєкту не можна видалити чи понизити.
+- `backend/src/middleware/rateLimiters.js` — `writeLimiter` (30 запитів/хв, ключ — `user.id`, а не IP, бо кілька колег можуть сидіти за одним офісним IP) на створення проєктів/рев'ю/коментарів і на керування учасниками — окремо від тісного лімітера на `/auth/*` і вільного глобального в `app.js`.
+
 ## Далі за планом
 
-- Тиждень 7: ролі/права (частково закладено — `role` на users і `project_members`), rate-limiting (вже підключено express-rate-limit на auth і глобально)
 - Тиждень 8: Docker Compose, Jest/RTL тести, деплой

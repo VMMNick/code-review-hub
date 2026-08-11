@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { writeLimiter } from '../middleware/rateLimiters.js';
 import * as commentController from '../controllers/commentController.js';
 
 // Mounted under both /api/projects/:projectId/reviews/:reviewId/comments
@@ -7,7 +8,7 @@ import * as commentController from '../controllers/commentController.js';
 const router = Router({ mergeParams: true });
 
 router.get('/', commentController.listComments);
-router.post('/', commentController.createComment);
+router.post('/', writeLimiter, commentController.createComment);
 router.delete('/:commentId', commentController.deleteComment);
 
 export default router;

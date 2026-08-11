@@ -40,12 +40,15 @@ export async function createReview(req, res, next) {
   }
 }
 
+// Attaches the caller's effective project role (admin/reviewer/author) onto
+// the review as `projectRole`, so callers can make permission decisions
+// without a second round trip to project_members.
 export async function getReviewOrThrow(reviewId, userId) {
   const { rows } = await pool.query('SELECT * FROM reviews WHERE id = $1', [reviewId]);
   const review = rows[0];
   if (!review) throw new HttpError(404, 'Review not found');
-  await assertProjectAccess(review.project_id, userId);
-  return review;
+  const project = await assertProjectAccess(review.project_id, userId);
+  return { ...review, projectRole: project.role };
 }
 
 export async function getReview(req, res, next) {
@@ -60,6 +63,11 @@ export async function getReview(req, res, next) {
 export async function updateReviewStatus(req, res, next) {
   try {
     const review = await getReviewOrThrow(req.params.id, req.user.id);
+    // Authors shouldn't be able to self-approve their own review; status
+    // changes are a reviewer/admin call.
+    if (!['admin', 'reviewer'].includes(review.projectRole)) {
+      throw new HttpError(403, 'Only a reviewer or project admin can change review status');
+    }
     const { status } = updateStatusSchema.parse(req.body);
     const { rows } = await pool.query(
       `UPDATE reviews SET status = $1 WHERE id = $2 RETURNING *`,
@@ -74,8 +82,9 @@ export async function updateReviewStatus(req, res, next) {
 export async function deleteReview(req, res, next) {
   try {
     const review = await getReviewOrThrow(req.params.id, req.user.id);
-    if (review.author_id !== req.user.id && req.user.role !== 'admin') {
-      throw new HttpError(403, 'Only the author or an admin can delete this review');
+    const isProjectAdmin = review.projectRole === 'admin';
+    if (review.author_id !== req.user.id && !isProjectAdmin && req.user.role !== 'admin') {
+      throw new HttpError(403, 'Only the author or a project admin can delete this review');
     }
     await pool.query('DELETE FROM reviews WHERE id = $1', [review.id]);
     res.status(204).send();
