@@ -52,9 +52,16 @@ frontend/   React (Vite), react-router, axios
 - `line_number` необов'язковий: коментарі без нього потрапляють у "Загальне обговорення".
 - Фронтенд: клік на рядок у Monaco (`onMouseDown` + `e.target.position.lineNumber`) відкриває панель коментарів для цього рядка.
 
+## Тиждень 5: Socket.io — live-коментарі та "хтось друкує"
+
+- Один HTTP-сервер (`http.createServer`) для Express і Socket.io (`backend/src/server.js`), автентифікація хендшейку через JWT access token (`socket.handshake.auth.token`).
+- Кімнати `review:{id}`: клієнт приєднується через `review:join`, доступ перевіряється тим самим `getReviewOrThrow`, що й REST.
+- Live-коментарі: після INSERT `commentController` емітить `comment:new` у кімнату рев'ю. Дублікатів немає завдяки дедуплікації за `id` на клієнті (comment id — з БД, унікальний), а не спробам вирахувати "чий це сокет" на сервері — це прибирає race condition між REST-відповіддю і сокет-подією незалежно від порядку їх приходу.
+- Індикатор "хтось друкує": `typing:start`/`typing:stop` за (reviewId, lineNumber), стан тримається в пам'яті процесу (`Map` у `backend/src/realtime/socketServer.js`), автоочищення через 2с бездіяльності і на `disconnect`. Масштабування на кілька WS-серверів через Redis pub/sub — Тиждень 6.
+- Фронтенд: `frontend/src/realtime/socket.js` — єдиний `socket.io-client`, підключення лежить у `ReviewDetailPage`; proxy `/socket.io` додано у `vite.config.js`.
+
 ## Далі за планом
 
-- Тиждень 5: Socket.io — live-коментарі, "хтось друкує"
 - Тиждень 6: Redis — кеш сесій, pub/sub між WS-серверами
 - Тиждень 7: ролі/права (частково закладено — `role` на users і `project_members`), rate-limiting (вже підключено express-rate-limit на auth і глобально)
 - Тиждень 8: Docker Compose, Jest/RTL тести, деплой

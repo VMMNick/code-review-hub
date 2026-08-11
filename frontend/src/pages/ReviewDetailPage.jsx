@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import { api } from '../api/client.js';
 import { detectLanguage } from '../utils/detectLanguage.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import { connectSocket, disconnectSocket } from '../realtime/socket.js';
 import CommentThread from '../components/CommentThread.jsx';
 
 const LANGUAGE_OPTIONS = [
@@ -11,8 +13,10 @@ const LANGUAGE_OPTIONS = [
   'json', 'html', 'css', 'scss', 'markdown'
 ];
 
+const TYPING_STOP_DELAY_MS = 2000;
+
 // comments come back flat (ordered by created_at); group into
-// { [lineNumber ?? 'general']: { topLevel: [...], repliesByParent: Map } }
+// { [lineNumber ?? 'general']: [...] } plus a parentId -> replies map
 function groupComments(comments) {
   const byLine = new Map();
   for (const c of comments) {
@@ -30,15 +34,28 @@ function groupComments(comments) {
   return { byLine, repliesByParent };
 }
 
+// Comments arrive both as the REST response (immediate, own tab) and as a
+// 'comment:new' broadcast (all tabs, including the sender's). Since ids are
+// DB-generated and unique, de-duping on append is enough to avoid double
+// rendering regardless of which one lands first.
+function addCommentDeduped(prev, comment) {
+  if (prev.some((c) => c.id === comment.id)) return prev;
+  return [...prev, comment];
+}
+
 export default function ReviewDetailPage() {
   const { reviewId } = useParams();
+  const { user } = useAuth();
   const [review, setReview] = useState(null);
   const [comments, setComments] = useState([]);
+  const [typists, setTypists] = useState([]);
   const [language, setLanguage] = useState('plaintext');
   const [activeLine, setActiveLine] = useState(null);
   const [lineCommentText, setLineCommentText] = useState('');
   const [generalCommentText, setGeneralCommentText] = useState('');
   const [error, setError] = useState(null);
+  const typingTimeoutRef = useRef(null);
+  const socketRef = useRef(null);
 
   const loadComments = useCallback(async () => {
     const { data } = await api.get(`/reviews/${reviewId}/comments`);
@@ -60,6 +77,53 @@ export default function ReviewDetailPage() {
     };
   }, [reviewId]);
 
+  // Socket.io: join the review's room, listen for live comments and typing
+  // updates from other clients. One connection per mounted page, torn down
+  // on unmount/reviewId change.
+  useEffect(() => {
+    const socket = connectSocket();
+    socketRef.current = socket;
+
+    function join() {
+      socket.emit('review:join', reviewId);
+    }
+    if (socket.connected) join();
+    socket.on('connect', join);
+
+    function handleNewComment(comment) {
+      setComments((prev) => addCommentDeduped(prev, comment));
+    }
+    function handleTypingUpdate({ typists: list }) {
+      setTypists(list.filter((t) => t.userId !== user?.id));
+    }
+    socket.on('comment:new', handleNewComment);
+    socket.on('typing:update', handleTypingUpdate);
+
+    return () => {
+      socket.emit('review:leave');
+      socket.off('connect', join);
+      socket.off('comment:new', handleNewComment);
+      socket.off('typing:update', handleTypingUpdate);
+      clearTimeout(typingTimeoutRef.current);
+      disconnectSocket();
+    };
+  }, [reviewId, user?.id]);
+
+  function notifyTyping(lineNumber) {
+    const socket = socketRef.current;
+    if (!socket) return;
+    socket.emit('typing:start', { lineNumber: lineNumber ?? null });
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('typing:stop');
+    }, TYPING_STOP_DELAY_MS);
+  }
+
+  function stopTyping() {
+    clearTimeout(typingTimeoutRef.current);
+    socketRef.current?.emit('typing:stop');
+  }
+
   function handleEditorMount(editor) {
     editor.onMouseDown((e) => {
       const lineNumber = e.target.position?.lineNumber;
@@ -70,28 +134,30 @@ export default function ReviewDetailPage() {
   async function handleAddLineComment(e) {
     e.preventDefault();
     if (!lineCommentText.trim()) return;
-    await api.post(`/reviews/${reviewId}/comments`, {
+    stopTyping();
+    const { data } = await api.post(`/reviews/${reviewId}/comments`, {
       content: lineCommentText.trim(),
       lineNumber: activeLine
     });
     setLineCommentText('');
-    await loadComments();
+    setComments((prev) => addCommentDeduped(prev, data));
   }
 
   async function handleAddGeneralComment(e) {
     e.preventDefault();
     if (!generalCommentText.trim()) return;
-    await api.post(`/reviews/${reviewId}/comments`, {
+    stopTyping();
+    const { data } = await api.post(`/reviews/${reviewId}/comments`, {
       content: generalCommentText.trim(),
       lineNumber: null
     });
     setGeneralCommentText('');
-    await loadComments();
+    setComments((prev) => addCommentDeduped(prev, data));
   }
 
   async function handleReply(parentId, content) {
-    await api.post(`/reviews/${reviewId}/comments`, { content, parentId });
-    await loadComments();
+    const { data } = await api.post(`/reviews/${reviewId}/comments`, { content, parentId });
+    setComments((prev) => addCommentDeduped(prev, data));
   }
 
   if (error) return <p role="alert">{error}</p>;
@@ -100,6 +166,8 @@ export default function ReviewDetailPage() {
   const { byLine, repliesByParent } = groupComments(comments);
   const activeLineComments = activeLine ? byLine.get(activeLine) ?? [] : [];
   const generalComments = byLine.get('general') ?? [];
+  const typistsOnActiveLine = typists.filter((t) => t.lineNumber === activeLine);
+  const typistsGeneral = typists.filter((t) => t.lineNumber === null);
 
   return (
     <div style={{ display: 'flex', gap: 16 }}>
@@ -146,7 +214,11 @@ export default function ReviewDetailPage() {
             <form onSubmit={handleAddLineComment}>
               <textarea
                 value={lineCommentText}
-                onChange={(e) => setLineCommentText(e.target.value)}
+                onChange={(e) => {
+                  setLineCommentText(e.target.value);
+                  notifyTyping(activeLine);
+                }}
+                onBlur={stopTyping}
                 rows={3}
                 placeholder={`Коментар до рядка ${activeLine}…`}
                 required
@@ -155,6 +227,12 @@ export default function ReviewDetailPage() {
                 <button type="submit">Додати коментар</button>
               </div>
             </form>
+
+            {typistsOnActiveLine.length > 0 && (
+              <p style={{ color: '#888', fontStyle: 'italic' }}>
+                {typistsOnActiveLine.map((t) => t.name).join(', ')} зараз друкує…
+              </p>
+            )}
 
             {activeLineComments.map((c) => (
               <CommentThread
@@ -172,7 +250,11 @@ export default function ReviewDetailPage() {
         <form onSubmit={handleAddGeneralComment}>
           <textarea
             value={generalCommentText}
-            onChange={(e) => setGeneralCommentText(e.target.value)}
+            onChange={(e) => {
+              setGeneralCommentText(e.target.value);
+              notifyTyping(null);
+            }}
+            onBlur={stopTyping}
             rows={2}
             placeholder="Загальний коментар до рев'ю…"
             required
@@ -181,6 +263,13 @@ export default function ReviewDetailPage() {
             <button type="submit">Додати</button>
           </div>
         </form>
+
+        {typistsGeneral.length > 0 && (
+          <p style={{ color: '#888', fontStyle: 'italic' }}>
+            {typistsGeneral.map((t) => t.name).join(', ')} зараз друкує…
+          </p>
+        )}
+
         {generalComments.map((c) => (
           <CommentThread
             key={c.id}

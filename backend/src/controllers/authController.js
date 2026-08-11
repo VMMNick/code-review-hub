@@ -81,7 +81,7 @@ export async function refresh(req, res, next) {
 
     const tokenHash = hashToken(refreshToken);
     const { rows } = await pool.query(
-      `SELECT rt.*, u.id AS user_id, u.email, u.role
+      `SELECT rt.*, u.id AS user_id, u.email, u.role, u.name
        FROM refresh_tokens rt
        JOIN users u ON u.id = rt.user_id
        WHERE rt.token_hash = $1`,
@@ -94,7 +94,7 @@ export async function refresh(req, res, next) {
 
     // Rotate: revoke old, issue new pair
     await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1', [record.id]);
-    const user = { id: record.user_id, email: record.email, role: record.role };
+    const user = { id: record.user_id, email: record.email, role: record.role, name: record.name };
     const tokens = await issueTokenPair(user);
 
     res.json({ ...tokens });

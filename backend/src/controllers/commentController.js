@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { getReviewOrThrow } from './reviewController.js';
+import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -50,7 +51,16 @@ export async function createComment(req, res, next) {
        RETURNING *`,
       [review.id, lineNumber ?? null, req.user.id, content, parentId ?? null]
     );
-    res.status(201).json(rows[0]);
+    const comment = { ...rows[0], author_name: req.user.name ?? req.user.email };
+
+    // Broadcast to everyone viewing this review, including the author's own
+    // other tabs. The comment id is unique (DB-generated), so clients dedupe
+    // by id instead of the server trying to guess which socket to skip —
+    // that sidesteps races where the REST response and the socket event
+    // arrive in either order.
+    getIo()?.to(reviewRoom(review.id)).emit('comment:new', comment);
+
+    res.status(201).json(comment);
   } catch (err) {
     next(err);
   }

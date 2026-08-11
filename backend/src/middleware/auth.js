@@ -7,7 +7,7 @@ export function requireAuth(req, res, next) {
   }
   try {
     const payload = verifyAccessToken(header.slice('Bearer '.length));
-    req.user = { id: payload.sub, role: payload.role, email: payload.email };
+    req.user = { id: payload.sub, role: payload.role, email: payload.email, name: payload.name };
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired access token' });
