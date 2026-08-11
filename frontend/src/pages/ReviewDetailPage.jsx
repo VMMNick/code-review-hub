@@ -6,6 +6,7 @@ import { detectLanguage } from '../utils/detectLanguage.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { connectSocket, disconnectSocket } from '../realtime/socket.js';
 import CommentThread from '../components/CommentThread.jsx';
+import RevisionDiffView from '../components/RevisionDiffView.jsx';
 
 const LANGUAGE_OPTIONS = [
   'plaintext', 'javascript', 'typescript', 'python', 'ruby', 'go', 'rust',
@@ -55,6 +56,10 @@ export default function ReviewDetailPage() {
   const [generalCommentText, setGeneralCommentText] = useState('');
   const [hideResolved, setHideResolved] = useState(false);
   const [error, setError] = useState(null);
+  const [revisions, setRevisions] = useState([]);
+  const [diffMode, setDiffMode] = useState(false);
+  const [newRevisionCode, setNewRevisionCode] = useState('');
+  const [showPushForm, setShowPushForm] = useState(false);
   const typingTimeoutRef = useRef(null);
   const socketRef = useRef(null);
 
@@ -63,14 +68,24 @@ export default function ReviewDetailPage() {
     setComments(data);
   }, [reviewId]);
 
+  const loadRevisions = useCallback(async () => {
+    const { data } = await api.get(`/reviews/${reviewId}/revisions`);
+    setRevisions(data);
+  }, [reviewId]);
+
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.get(`/reviews/${reviewId}`), api.get(`/reviews/${reviewId}/comments`)])
-      .then(([reviewRes, commentsRes]) => {
+    Promise.all([
+      api.get(`/reviews/${reviewId}`),
+      api.get(`/reviews/${reviewId}/comments`),
+      api.get(`/reviews/${reviewId}/revisions`)
+    ])
+      .then(([reviewRes, commentsRes, revisionsRes]) => {
         if (cancelled) return;
         setReview(reviewRes.data);
         setLanguage(detectLanguage(reviewRes.data.title));
         setComments(commentsRes.data);
+        setRevisions(revisionsRes.data);
       })
       .catch(() => !cancelled && setError('Не вдалося завантажити рев\'ю'));
     return () => {
@@ -100,9 +115,14 @@ export default function ReviewDetailPage() {
     function handleCommentResolved({ id, resolved_at, resolved_by }) {
       setComments((prev) => prev.map((c) => (c.id === id ? { ...c, resolved_at, resolved_by } : c)));
     }
+    function handleNewRevision(revision) {
+      setReview((prev) => (prev ? { ...prev, code_snapshot: revision.code_snapshot } : prev));
+      loadRevisions();
+    }
     socket.on('comment:new', handleNewComment);
     socket.on('typing:update', handleTypingUpdate);
     socket.on('comment:resolved', handleCommentResolved);
+    socket.on('review:revision', handleNewRevision);
 
     return () => {
       socket.emit('review:leave');
@@ -110,6 +130,7 @@ export default function ReviewDetailPage() {
       socket.off('comment:new', handleNewComment);
       socket.off('typing:update', handleTypingUpdate);
       socket.off('comment:resolved', handleCommentResolved);
+      socket.off('review:revision', handleNewRevision);
       clearTimeout(typingTimeoutRef.current);
       disconnectSocket();
     };
@@ -166,6 +187,16 @@ export default function ReviewDetailPage() {
     setComments((prev) => addCommentDeduped(prev, data));
   }
 
+  async function handlePushRevision(e) {
+    e.preventDefault();
+    if (!newRevisionCode.trim()) return;
+    const { data } = await api.post(`/reviews/${reviewId}/revisions`, { codeSnapshot: newRevisionCode });
+    setReview((prev) => (prev ? { ...prev, code_snapshot: data.code_snapshot } : prev));
+    setNewRevisionCode('');
+    setShowPushForm(false);
+    await loadRevisions();
+  }
+
   async function handleToggleResolved(commentId, resolved) {
     const { data } = await api.patch(`/reviews/${reviewId}/comments/${commentId}/resolved`, { resolved });
     setComments((prev) =>
@@ -193,32 +224,65 @@ export default function ReviewDetailPage() {
         <h1>{review.title}</h1>
         <p>Статус: {review.status}</p>
 
-        <label>
-          Мова підсвітки{' '}
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            {LANGUAGE_OPTIONS.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <label>
+            Мова підсвітки{' '}
+            <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+              {LANGUAGE_OPTIONS.map((lang) => (
+                <option key={lang} value={lang}>
+                  {lang}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <Editor
-          height="70vh"
-          language={language}
-          value={review.code_snapshot}
-          theme="vs-dark"
-          onMount={handleEditorMount}
-          options={{
-            readOnly: true,
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            wordWrap: 'on',
-            fontSize: 13,
-            glyphMargin: true
-          }}
-        />
+          <button type="button" onClick={() => setDiffMode((v) => !v)} disabled={revisions.length < 2}>
+            {diffMode ? 'Показати поточний код' : 'Показати diff версій'}
+          </button>
+
+          {(review.author_id === user?.id || review.projectRole === 'admin') && (
+            <button type="button" onClick={() => setShowPushForm((v) => !v)}>
+              {showPushForm ? 'Скасувати' : 'Надіслати нову версію коду'}
+            </button>
+          )}
+
+          <span style={{ color: '#888', fontSize: 12 }}>Версій: {revisions.length}</span>
+        </div>
+
+        {showPushForm && (
+          <form onSubmit={handlePushRevision} style={{ marginTop: 8 }}>
+            <textarea
+              value={newRevisionCode}
+              onChange={(e) => setNewRevisionCode(e.target.value)}
+              rows={8}
+              placeholder="Вставте оновлений код…"
+              required
+            />
+            <div>
+              <button type="submit">Опублікувати нову версію</button>
+            </div>
+          </form>
+        )}
+
+        {diffMode ? (
+          <RevisionDiffView reviewId={reviewId} revisions={revisions} language={language} />
+        ) : (
+          <Editor
+            height="70vh"
+            language={language}
+            value={review.code_snapshot}
+            theme="vs-dark"
+            onMount={handleEditorMount}
+            options={{
+              readOnly: true,
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              wordWrap: 'on',
+              fontSize: 13,
+              glyphMargin: true
+            }}
+          />
+        )}
       </div>
 
       <div style={{ flex: 1, maxHeight: '80vh', overflowY: 'auto' }}>

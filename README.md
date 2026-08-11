@@ -113,3 +113,10 @@ frontend/   React (Vite), react-router, axios
 - `react-markdown` + `remark-gfm` (таблиці, закреслення, чекбокси) рендерять `comment.content` у `CommentMarkdown.jsx`. Навмисно **без** `rehype-raw` — react-markdown за замовчуванням не використовує `dangerouslySetInnerHTML`, тож "сирий" HTML у джерелі не стає живою розміткою (перевірено тестом: `<img onerror=…>` не породжує `<img>` у DOM). Це другий рубіж поверх бекендової `sanitizePlainText` (Тиждень "Безпека"), яка й так вирізає HTML-теги ще до запису в БД.
 - Посилання відкриваються в новій вкладці з `rel="noopener noreferrer"`.
 - Тести: `CommentMarkdown.test.jsx` — форматування, посилання, GFM-закреслення, і явна перевірка, що сирий HTML не виконується.
+
+### Diff-view для версій коду
+
+- Нова таблиця `review_revisions` (`backend/db/migrations/002_review_revisions.sql` для існуючих БД, з бекфілом ревізії №1 з поточного `code_snapshot`). `reviews.code_snapshot` і далі завжди дзеркалить останню ревізію — існуючий код, що читає рев'ю, не зламався.
+- Створення рев'ю тепер пише в `reviews` і `review_revisions` в одній транзакції (`BEGIN`/`COMMIT` через виділений `client` з пулу) — рев'ю ніколи не існує без хоча б однієї ревізії.
+- `GET /api/reviews/:id/revisions` — легкий список (без `code_snapshot`, щоб не тягнути потенційно сотні КБ на кожну ревізію заради селектора версій), `GET /api/reviews/:id/revisions/:revisionId` — повний код однієї ревізії, `POST /api/reviews/:id/revisions` — запушити нову версію (лише автор рев'ю або `admin` проєкту), з live-сповіщенням `review:revision` через Socket.io.
+- Фронтенд: `RevisionDiffView.jsx` на Monaco `DiffEditor` (той самий пакет `@monaco-editor/react`, без окремої diff-бібліотеки) — вибір "було"/"стало" з дропдаунів, side-by-side порівняння. Перемикач "Показати diff версій" у `ReviewDetailPage`.

@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { assertProjectAccess } from './projectController.js';
 import { sanitizePlainText } from '../utils/sanitize.js';
+import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
 
 // 500,000 chars (~500KB) caps a single review's code so one request can't
 // tie up the DB/response payload indefinitely. This is a field-level limit
@@ -20,6 +21,13 @@ const createReviewSchema = z.object({
 
 const updateStatusSchema = z.object({
   status: z.enum(['open', 'approved', 'changes_requested'])
+});
+
+const addRevisionSchema = z.object({
+  codeSnapshot: z.string().min(1).max(
+    MAX_CODE_SNAPSHOT_LENGTH,
+    `Code snapshot too large (max ${MAX_CODE_SNAPSHOT_LENGTH.toLocaleString()} characters)`
+  )
 });
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
@@ -75,20 +83,38 @@ export async function listReviews(req, res, next) {
 }
 
 export async function createReview(req, res, next) {
+  const client = await pool.connect();
   try {
     await assertProjectAccess(req.params.projectId, req.user.id);
     const { title, codeSnapshot } = createReviewSchema.parse(req.body);
-    const { rows } = await pool.query(
+    const cleanTitle = sanitizePlainText(title, { fieldName: 'title' });
+
+    // The review row and its first revision are written together so a
+    // review never exists without at least one entry in review_revisions
+    // for the diff view to anchor on.
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       `INSERT INTO reviews (project_id, title, code_snapshot, author_id)
        VALUES ($1, $2, $3, $4) RETURNING *`,
       // codeSnapshot deliberately isn't run through sanitizePlainText — it's
       // source code rendered verbatim in Monaco, not HTML, so stripping tags
       // would corrupt any HTML/JSX/XML file under review.
-      [req.params.projectId, sanitizePlainText(title, { fieldName: 'title' }), codeSnapshot, req.user.id]
+      [req.params.projectId, cleanTitle, codeSnapshot, req.user.id]
     );
-    res.status(201).json(rows[0]);
+    const review = rows[0];
+    await client.query(
+      `INSERT INTO review_revisions (review_id, revision_number, code_snapshot, author_id)
+       VALUES ($1, 1, $2, $3)`,
+      [review.id, codeSnapshot, req.user.id]
+    );
+    await client.query('COMMIT');
+
+    res.status(201).json(review);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
+  } finally {
+    client.release();
   }
 }
 
@@ -109,6 +135,78 @@ export async function getReview(req, res, next) {
     res.json(review);
   } catch (err) {
     next(err);
+  }
+}
+
+// Lightweight list — omits code_snapshot so N revisions x up to 500KB each
+// don't all come back at once just to populate a version picker.
+export async function listRevisions(req, res, next) {
+  try {
+    const review = await getReviewOrThrow(req.params.id, req.user.id);
+    const { rows } = await pool.query(
+      `SELECT rr.id, rr.revision_number, rr.author_id, rr.created_at, u.name AS author_name
+       FROM review_revisions rr
+       JOIN users u ON u.id = rr.author_id
+       WHERE rr.review_id = $1
+       ORDER BY rr.revision_number ASC`,
+      [review.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRevision(req, res, next) {
+  try {
+    const review = await getReviewOrThrow(req.params.id, req.user.id);
+    const { rows } = await pool.query(
+      'SELECT * FROM review_revisions WHERE review_id = $1 AND id = $2',
+      [review.id, req.params.revisionId]
+    );
+    if (rows.length === 0) throw new HttpError(404, 'Revision not found');
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pushes a new code revision (e.g. the author addressed feedback and wants
+// reviewers to see just what changed). Only the review's author or a
+// project admin can do this — reviewers/other authors comment, they don't
+// rewrite someone else's submission.
+export async function addRevision(req, res, next) {
+  const client = await pool.connect();
+  try {
+    const review = await getReviewOrThrow(req.params.id, req.user.id);
+    const isProjectAdmin = review.projectRole === 'admin';
+    if (review.author_id !== req.user.id && !isProjectAdmin) {
+      throw new HttpError(403, 'Only the review author or a project admin can push a new revision');
+    }
+    const { codeSnapshot } = addRevisionSchema.parse(req.body);
+
+    await client.query('BEGIN');
+    const { rows: numberRows } = await client.query(
+      'SELECT COALESCE(MAX(revision_number), 0) + 1 AS next FROM review_revisions WHERE review_id = $1',
+      [review.id]
+    );
+    const nextRevisionNumber = numberRows[0].next;
+    const { rows } = await client.query(
+      `INSERT INTO review_revisions (review_id, revision_number, code_snapshot, author_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [review.id, nextRevisionNumber, codeSnapshot, req.user.id]
+    );
+    await client.query('UPDATE reviews SET code_snapshot = $1 WHERE id = $2', [codeSnapshot, review.id]);
+    await client.query('COMMIT');
+
+    const revision = rows[0];
+    getIo()?.to(reviewRoom(review.id)).emit('review:revision', revision);
+    res.status(201).json(revision);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
   }
 }
 

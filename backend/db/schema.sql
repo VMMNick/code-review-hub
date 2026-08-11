@@ -54,6 +54,21 @@ CREATE INDEX idx_reviews_project_id ON reviews(project_id);
 CREATE INDEX idx_reviews_author_id ON reviews(author_id);
 CREATE INDEX idx_reviews_status ON reviews(status);
 
+-- Every code push to a review (including the first one, at creation) is a
+-- row here. reviews.code_snapshot always mirrors the latest revision's
+-- code_snapshot, so existing reads of a review don't need to change; this
+-- table exists purely to power the diff view between any two versions.
+CREATE TABLE review_revisions (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_id     UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    revision_number INTEGER NOT NULL,
+    code_snapshot TEXT NOT NULL,
+    author_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (review_id, revision_number)
+);
+CREATE INDEX idx_review_revisions_review_id ON review_revisions(review_id);
+
 CREATE TABLE comments (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     review_id   UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
