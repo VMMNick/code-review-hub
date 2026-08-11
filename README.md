@@ -37,11 +37,16 @@ frontend/   React (Vite), react-router, axios
 
 - `POST /api/auth/register`, `/login`, `/refresh`, `/logout`
 - `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`
-- `GET/POST /api/projects/:projectId/reviews`, `GET /api/reviews/:id` (через вкладений маршрут), `PATCH /:id/status`, `DELETE /:id`
+- `GET/POST /api/projects/:projectId/reviews`
+- `GET /api/reviews/:id`, `PATCH /api/reviews/:id/status`, `DELETE /api/reviews/:id` (top-level, для deep-link на сторінку рев'ю)
+
+## Тиждень 3: Monaco Editor
+
+- Фронтенд: `@monaco-editor/react`, сторінка `ReviewDetailPage` (`/reviews/:reviewId`) — read-only редактор з підсвіткою синтаксису.
+- Мова визначається евристично з розширення у `title` рев'ю (`utils.py` → python) через `src/utils/detectLanguage.js`; є ручний селектор мови, бо в схемі немає окремого поля `language`.
 
 ## Далі за планом
 
-- Тиждень 3: Monaco Editor, підсвітка коду
 - Тиждень 4: коментарі до рядків, треди (таблиця `comments` уже в схемі)
 - Тиждень 5: Socket.io — live-коментарі, "хтось друкує"
 - Тиждень 6: Redis — кеш сесій, pub/sub між WS-серверами
