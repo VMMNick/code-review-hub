@@ -6,6 +6,18 @@ import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
 import { sanitizePlainText } from '../utils/sanitize.js';
 import { notifyReply, notifyMentions } from '../services/notifications.js';
 import { logger } from '../config/logger.js';
+import { cached, bumpVersion, getVersion } from '../utils/cache.js';
+
+const COMMENTS_LIST_TTL_SECONDS = 15;
+const commentsListVersionKey = (reviewId) => `cache:v:comments:${reviewId}`;
+
+// Comments are also pushed live over Socket.io to anyone already viewing
+// the review, so a short cache TTL here only affects the initial REST
+// fetch/pagination — not live collaborators, who get updates from the
+// socket event regardless of what's cached.
+async function invalidateCommentsList(reviewId) {
+  await bumpVersion(commentsListVersionKey(reviewId));
+}
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -36,16 +48,28 @@ export async function listComments(req, res, next) {
     const limit = limitInput ?? DEFAULT_THREAD_PAGE_SIZE;
     const offset = (page - 1) * limit;
 
+    const result = await loadCommentsPage(req.params.reviewId, page, limit, offset);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function loadCommentsPage(reviewId, page, limit, offset) {
+  const version = await getVersion(commentsListVersionKey(reviewId));
+  const cacheKey = `cache:comments:${reviewId}:v${version}:page${page}:limit${limit}`;
+
+  return cached(cacheKey, COMMENTS_LIST_TTL_SECONDS, async () => {
     const { rows: countRows } = await pool.query(
       'SELECT COUNT(*)::int AS total FROM comments WHERE review_id = $1 AND parent_id IS NULL',
-      [req.params.reviewId]
+      [reviewId]
     );
     const total = countRows[0].total;
 
     const { rows: topLevel } = await pool.query(
       `SELECT id FROM comments WHERE review_id = $1 AND parent_id IS NULL
        ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
-      [req.params.reviewId, limit, offset]
+      [reviewId, limit, offset]
     );
     const topLevelIds = topLevel.map((r) => r.id);
 
@@ -57,18 +81,13 @@ export async function listComments(req, res, next) {
          JOIN users u ON u.id = c.author_id
          WHERE c.review_id = $1 AND (c.id = ANY($2) OR c.parent_id = ANY($2))
          ORDER BY c.created_at ASC`,
-        [req.params.reviewId, topLevelIds]
+        [reviewId, topLevelIds]
       );
       rows = threadRows;
     }
 
-    res.json({
-      comments: rows,
-      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
-    });
-  } catch (err) {
-    next(err);
-  }
+    return { comments: rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
+  });
 }
 
 export async function createComment(req, res, next) {
@@ -96,6 +115,7 @@ export async function createComment(req, res, next) {
       [review.id, lineNumber ?? null, req.user.id, cleanContent, parentId ?? null]
     );
     const comment = { ...rows[0], author_name: req.user.name ?? req.user.email };
+    await invalidateCommentsList(review.id);
 
     // Broadcast to everyone viewing this review, including the author's own
     // other tabs. The comment id is unique (DB-generated), so clients dedupe
@@ -155,6 +175,7 @@ export async function setCommentResolved(req, res, next) {
       [resolved ? new Date() : null, resolved ? req.user.id : null, comment.id]
     );
     const result = updated[0];
+    await invalidateCommentsList(review.id);
 
     getIo()?.to(reviewRoom(review.id)).emit('comment:resolved', {
       id: result.id,
@@ -183,6 +204,7 @@ export async function deleteComment(req, res, next) {
     }
     // ON DELETE CASCADE on parent_id removes replies to this comment too.
     await pool.query('DELETE FROM comments WHERE id = $1', [comment.id]);
+    await invalidateCommentsList(review.id);
     res.status(204).send();
   } catch (err) {
     next(err);

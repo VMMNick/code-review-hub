@@ -4,6 +4,21 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { assertProjectAccess } from './projectController.js';
 import { sanitizePlainText } from '../utils/sanitize.js';
 import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
+import { cached, invalidateKeys, bumpVersion, getVersion } from '../utils/cache.js';
+
+const REVIEWS_LIST_TTL_SECONDS = 30;
+const REVIEW_ROW_TTL_SECONDS = 60;
+
+const reviewsListVersionKey = (projectId) => `cache:v:reviews:${projectId}`;
+const reviewRowKey = (reviewId) => `cache:review:${reviewId}`;
+
+// Called on any write that changes which reviews show up in a project's
+// list or how they sort/filter (create/status change/delete). Bumping the
+// version is enough — see utils/cache.js for why we don't need to hunt down
+// and delete every cached filter/page combination individually.
+async function invalidateReviewsList(projectId) {
+  await bumpVersion(reviewsListVersionKey(projectId));
+}
 
 // 500,000 chars (~500KB) caps a single review's code so one request can't
 // tie up the DB/response payload indefinitely. This is a field-level limit
@@ -83,21 +98,33 @@ export async function listReviews(req, res, next) {
     }
 
     const where = conditions.join(' AND ');
-    const { rows: countRows } = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM reviews WHERE ${where}`,
-      params
-    );
-    const total = countRows[0].total;
 
-    const { rows } = await pool.query(
-      `SELECT * FROM reviews WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
+    // Cache key includes the project's list-version plus every filter/page
+    // value that affects the result, so two different filter combos never
+    // collide, and any write to this project's reviews invalidates all of
+    // them at once via invalidateReviewsList() bumping the version.
+    const version = await getVersion(reviewsListVersionKey(req.params.projectId));
+    const cacheKey = `cache:reviews:${req.params.projectId}:v${version}:${JSON.stringify({ ...filters, page, limit })}`;
 
-    res.json({
-      reviews: rows,
-      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    const result = await cached(cacheKey, REVIEWS_LIST_TTL_SECONDS, async () => {
+      const { rows: countRows } = await pool.query(
+        `SELECT COUNT(*)::int AS total FROM reviews WHERE ${where}`,
+        params
+      );
+      const total = countRows[0].total;
+
+      const { rows } = await pool.query(
+        `SELECT * FROM reviews WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      );
+
+      return {
+        reviews: rows,
+        pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+      };
     });
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -129,6 +156,7 @@ export async function createReview(req, res, next) {
       [review.id, codeSnapshot, req.user.id]
     );
     await client.query('COMMIT');
+    await invalidateReviewsList(req.params.projectId);
 
     res.status(201).json(review);
   } catch (err) {
@@ -139,12 +167,23 @@ export async function createReview(req, res, next) {
   }
 }
 
+// The raw review row is fetched on essentially every review/comment/revision
+// request (getReviewOrThrow is called from all of those controllers), so
+// it's cached by id. Deliberately caches only the row itself, not the
+// caller's projectRole computed below — that's per-user and would leak
+// across users if it were part of the cached value.
+async function fetchReviewRow(reviewId) {
+  return cached(reviewRowKey(reviewId), REVIEW_ROW_TTL_SECONDS, async () => {
+    const { rows } = await pool.query('SELECT * FROM reviews WHERE id = $1', [reviewId]);
+    return rows[0] ?? null;
+  });
+}
+
 // Attaches the caller's effective project role (admin/reviewer/author) onto
 // the review as `projectRole`, so callers can make permission decisions
 // without a second round trip to project_members.
 export async function getReviewOrThrow(reviewId, userId) {
-  const { rows } = await pool.query('SELECT * FROM reviews WHERE id = $1', [reviewId]);
-  const review = rows[0];
+  const review = await fetchReviewRow(reviewId);
   if (!review) throw new HttpError(404, 'Review not found');
   const project = await assertProjectAccess(review.project_id, userId);
   return { ...review, projectRole: project.role };
@@ -219,6 +258,8 @@ export async function addRevision(req, res, next) {
     );
     await client.query('UPDATE reviews SET code_snapshot = $1 WHERE id = $2', [codeSnapshot, review.id]);
     await client.query('COMMIT');
+    await invalidateKeys(reviewRowKey(review.id));
+    await invalidateReviewsList(review.project_id);
 
     const revision = rows[0];
     getIo()?.to(reviewRoom(review.id)).emit('review:revision', revision);
@@ -244,6 +285,8 @@ export async function updateReviewStatus(req, res, next) {
       `UPDATE reviews SET status = $1 WHERE id = $2 RETURNING *`,
       [status, review.id]
     );
+    await invalidateKeys(reviewRowKey(review.id));
+    await invalidateReviewsList(review.project_id);
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -258,6 +301,8 @@ export async function deleteReview(req, res, next) {
       throw new HttpError(403, 'Only the author or a project admin can delete this review');
     }
     await pool.query('DELETE FROM reviews WHERE id = $1', [review.id]);
+    await invalidateKeys(reviewRowKey(review.id));
+    await invalidateReviewsList(review.project_id);
     res.status(204).send();
   } catch (err) {
     next(err);
