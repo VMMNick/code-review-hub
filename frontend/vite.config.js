@@ -9,5 +9,10 @@ export default defineConfig({
       '/api': 'http://localhost:4000',
       '/socket.io': { target: 'http://localhost:4000', ws: true }
     }
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js'
   }
 });

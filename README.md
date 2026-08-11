@@ -75,6 +75,11 @@ frontend/   React (Vite), react-router, axios
 - Керування учасниками: `GET/POST /api/projects/:id/members`, `PATCH/DELETE /api/projects/:id/members/:userId` — лише `admin` проєкту; власника проєкту не можна видалити чи понизити.
 - `backend/src/middleware/rateLimiters.js` — `writeLimiter` (30 запитів/хв, ключ — `user.id`, а не IP, бо кілька колег можуть сидіти за одним офісним IP) на створення проєктів/рев'ю/коментарів і на керування учасниками — окремо від тісного лімітера на `/auth/*` і вільного глобального в `app.js`.
 
-## Далі за планом
+## Тиждень 8: Docker Compose, тести, деплой
 
-- Тиждень 8: Docker Compose, Jest/RTL тести, деплой
+- **Docker Compose**: `docker-compose.yml` тепер піднімає весь стек — `postgres`, `redis`, `backend` (Express + Socket.io) і `frontend` (nginx зі статичною збіркою React, проксіює `/api` і `/socket.io` на `backend`). `docker compose up --build` → фронт на `:8080`, бек на `:4000`. `backend/Dockerfile` і `frontend/Dockerfile` (multi-stage: build → nginx) + `.dockerignore` у обох.
+- **Бекенд-тести** (`backend/tests/`, Jest + supertest): юніт-тести для `utils/tokens.js` (sign/verify JWT, хешування refresh-токенів) і HTTP-тести для `/health`, 404, валідації `/auth/register`, 401 на захищених маршрутах без токена. Тести навмисно не чіпають Postgres/Redis, тож проходять без `docker compose up` — DB-інтеграційні тести можна додати окремо в CI, де ці сервіси вже підняті.
+  - Під час написання тестів знайдено і виправлено реальний баг: `errorHandler` повертав `500` на помилки валідації Zod замість `400`, бо `ZodError` не має `.status`. Тепер `ZodError` обробляється окремо.
+- **Фронтенд-тести** (Vitest + React Testing Library + jsdom): `detectLanguage.test.js` (чиста функція) і `LoginPage.test.jsx` (рендер полів, введення тексту, `required`-атрибути). Конфіг — у `vite.config.js` (`test.environment: 'jsdom'`), сетап — `src/test/setup.js` (`@testing-library/jest-dom`).
+- Обидва набори тестів запущені й пройшли: 11/11 бекенд, 7/7 фронтенд.
+- **Деплой**: образи збираються з `backend/Dockerfile` і `frontend/Dockerfile`; секрети (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN`) підставляються через змінні середовища в `docker-compose.yml`, за замовчуванням — dev-заглушки, для прод-середовища їх треба перевизначити (env файл або секрети оркестратора).

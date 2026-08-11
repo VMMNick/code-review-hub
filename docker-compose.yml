@@ -1,5 +1,5 @@
-# Локальні залежності для розробки (Postgres + Redis). Повний
-# docker-compose для самих backend/frontend сервісів — Тиждень 8.
+# Повний стек: Postgres + Redis + backend (Express/Socket.io) + frontend
+# (nginx, статична збірка React). `docker compose up --build` піднімає все.
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,6 +12,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -19,6 +24,36 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - '4000:4000'
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/code_review_hub
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - '8080:80'
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
