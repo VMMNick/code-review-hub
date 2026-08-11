@@ -102,3 +102,8 @@ frontend/   React (Vite), react-router, axios
 - `PATCH /api/reviews/:reviewId/comments/:commentId/resolved` `{ resolved: boolean }`, доступно будь-якому учаснику проєкту (той самий поріг, що й на створення коментаря — вирішує зазвичай не той, хто писав коментар, а хто виправив код).
 - Live-синхронізація через Socket.io (`comment:resolved`), той самий підхід, що й `comment:new` у Тижні 5.
 - У `ReviewDetailPage` — чекбокс "Приховати вирішені" і візуальне маркування (✓, приглушений фон) у `CommentThread`.
+
+### Пошук і фільтрація рев'ю
+
+- `GET /api/projects/:projectId/reviews` приймає опційні query-параметри `status`, `authorId`, `dateFrom`, `dateTo`, `q` (пошук по `title`, `ILIKE`). WHERE-клауза будується динамічно, але завжди параметризовано (`$1, $2, …`) — без ризику SQL-injection навіть з довільним набором фільтрів.
+- Фронтенд (`ProjectDetailPage`): текстовий пошук з debounce 300мс, дропдауни статусу й автора (список учасників — з уже наявного `GET /projects/:id/members`), фільтр за датою створення.

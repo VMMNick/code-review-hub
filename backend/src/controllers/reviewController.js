@@ -22,12 +22,51 @@ const updateStatusSchema = z.object({
   status: z.enum(['open', 'approved', 'changes_requested'])
 });
 
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+const listReviewsQuerySchema = z.object({
+  status: z.enum(['open', 'approved', 'changes_requested']).optional(),
+  authorId: z.string().uuid().optional(),
+  dateFrom: z.string().regex(isoDatePattern, 'dateFrom must be YYYY-MM-DD or ISO 8601').optional(),
+  dateTo: z.string().regex(isoDatePattern, 'dateTo must be YYYY-MM-DD or ISO 8601').optional(),
+  q: z.string().min(1).max(255).optional()
+});
+
+// Filters are all optional query params: ?status=&authorId=&dateFrom=&dateTo=&q=
+// Built as a parameterized WHERE clause (never string-interpolated) so
+// there's no SQL injection surface even though the filter set is dynamic.
 export async function listReviews(req, res, next) {
   try {
     await assertProjectAccess(req.params.projectId, req.user.id);
+    const filters = listReviewsQuerySchema.parse(req.query);
+
+    const conditions = ['project_id = $1'];
+    const params = [req.params.projectId];
+
+    if (filters.status) {
+      params.push(filters.status);
+      conditions.push(`status = $${params.length}`);
+    }
+    if (filters.authorId) {
+      params.push(filters.authorId);
+      conditions.push(`author_id = $${params.length}`);
+    }
+    if (filters.dateFrom) {
+      params.push(filters.dateFrom);
+      conditions.push(`created_at >= $${params.length}`);
+    }
+    if (filters.dateTo) {
+      params.push(filters.dateTo);
+      conditions.push(`created_at <= $${params.length}`);
+    }
+    if (filters.q) {
+      params.push(`%${filters.q}%`);
+      conditions.push(`title ILIKE $${params.length}`);
+    }
+
     const { rows } = await pool.query(
-      `SELECT * FROM reviews WHERE project_id = $1 ORDER BY created_at DESC`,
-      [req.params.projectId]
+      `SELECT * FROM reviews WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+      params
     );
     res.json(rows);
   } catch (err) {
