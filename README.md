@@ -107,3 +107,9 @@ frontend/   React (Vite), react-router, axios
 
 - `GET /api/projects/:projectId/reviews` приймає опційні query-параметри `status`, `authorId`, `dateFrom`, `dateTo`, `q` (пошук по `title`, `ILIKE`). WHERE-клауза будується динамічно, але завжди параметризовано (`$1, $2, …`) — без ризику SQL-injection навіть з довільним набором фільтрів.
 - Фронтенд (`ProjectDetailPage`): текстовий пошук з debounce 300мс, дропдауни статусу й автора (список учасників — з уже наявного `GET /projects/:id/members`), фільтр за датою створення.
+
+### Markdown у коментарях
+
+- `react-markdown` + `remark-gfm` (таблиці, закреслення, чекбокси) рендерять `comment.content` у `CommentMarkdown.jsx`. Навмисно **без** `rehype-raw` — react-markdown за замовчуванням не використовує `dangerouslySetInnerHTML`, тож "сирий" HTML у джерелі не стає живою розміткою (перевірено тестом: `<img onerror=…>` не породжує `<img>` у DOM). Це другий рубіж поверх бекендової `sanitizePlainText` (Тиждень "Безпека"), яка й так вирізає HTML-теги ще до запису в БД.
+- Посилання відкриваються в новій вкладці з `rel="noopener noreferrer"`.
+- Тести: `CommentMarkdown.test.jsx` — форматування, посилання, GFM-закреслення, і явна перевірка, що сирий HTML не виконується.

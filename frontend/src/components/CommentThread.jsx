@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import CommentMarkdown from './CommentMarkdown.jsx';
 
 // Renders one top-level comment plus its replies (one level of threading,
 // matching the flat parent_id model in the comments table). Resolved state
@@ -36,7 +37,7 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
         </span>
         {isResolved && <span style={{ color: '#2e7d32', fontSize: 12 }}>✓ вирішено</span>}
       </p>
-      <p style={{ whiteSpace: 'pre-wrap' }}>{comment.content}</p>
+      <CommentMarkdown content={comment.content} />
 
       {replies.length > 0 && (
         <div style={{ marginLeft: 16, borderLeft: '2px solid #eee', paddingLeft: 8 }}>
@@ -46,7 +47,7 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
               <span style={{ color: '#888', fontSize: 12 }}>
                 {new Date(r.created_at).toLocaleString('uk-UA')}
               </span>
-              <p style={{ margin: '2px 0', whiteSpace: 'pre-wrap' }}>{r.content}</p>
+              <CommentMarkdown content={r.content} />
             </div>
           ))}
         </div>

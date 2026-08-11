@@ -244,7 +244,7 @@ export default function ReviewDetailPage() {
                 }}
                 onBlur={stopTyping}
                 rows={3}
-                placeholder={`Коментар до рядка ${activeLine}…`}
+                placeholder={`Коментар до рядка ${activeLine}… (підтримується Markdown)`}
                 required
               />
               <div>
@@ -281,7 +281,7 @@ export default function ReviewDetailPage() {
             }}
             onBlur={stopTyping}
             rows={2}
-            placeholder="Загальний коментар до рев'ю…"
+            placeholder="Загальний коментар до рев'ю… (підтримується Markdown)"
             required
           />
           <div>
