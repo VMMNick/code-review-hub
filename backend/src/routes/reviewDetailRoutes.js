@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import * as reviewController from '../controllers/reviewController.js';
+import commentRoutes from './commentRoutes.js';
 
 // Top-level access to a single review by id, without needing the
 // project id up front (e.g. deep-linking to /reviews/:id in the UI).
@@ -12,5 +13,8 @@ router.use(requireAuth);
 router.get('/:id', reviewController.getReview);
 router.patch('/:id/status', reviewController.updateReviewStatus);
 router.delete('/:id', reviewController.deleteReview);
+
+// Comments: /api/reviews/:reviewId/comments
+router.use('/:reviewId/comments', commentRoutes);
 
 export default router;

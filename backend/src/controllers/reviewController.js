@@ -40,7 +40,7 @@ export async function createReview(req, res, next) {
   }
 }
 
-async function getReviewOrThrow(reviewId, userId) {
+export async function getReviewOrThrow(reviewId, userId) {
   const { rows } = await pool.query('SELECT * FROM reviews WHERE id = $1', [reviewId]);
   const review = rows[0];
   if (!review) throw new HttpError(404, 'Review not found');

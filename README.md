@@ -45,9 +45,15 @@ frontend/   React (Vite), react-router, axios
 - Фронтенд: `@monaco-editor/react`, сторінка `ReviewDetailPage` (`/reviews/:reviewId`) — read-only редактор з підсвіткою синтаксису.
 - Мова визначається евристично з розширення у `title` рев'ю (`utils.py` → python) через `src/utils/detectLanguage.js`; є ручний селектор мови, бо в схемі немає окремого поля `language`.
 
+## Тиждень 4: коментарі та треди
+
+- `GET/POST /api/reviews/:reviewId/comments`, `DELETE /api/reviews/:reviewId/comments/:commentId`.
+- Тред — одна вкладеність через `parent_id` (комент → відповіді), без реального часу: просто перезапит списку після POST.
+- `line_number` необов'язковий: коментарі без нього потрапляють у "Загальне обговорення".
+- Фронтенд: клік на рядок у Monaco (`onMouseDown` + `e.target.position.lineNumber`) відкриває панель коментарів для цього рядка.
+
 ## Далі за планом
 
-- Тиждень 4: коментарі до рядків, треди (таблиця `comments` уже в схемі)
 - Тиждень 5: Socket.io — live-коментарі, "хтось друкує"
 - Тиждень 6: Redis — кеш сесій, pub/sub між WS-серверами
 - Тиждень 7: ролі/права (частково закладено — `role` на users і `project_members`), rate-limiting (вже підключено express-rate-limit на auth і глобально)
