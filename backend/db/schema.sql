@@ -86,3 +86,17 @@ CREATE TABLE comments (
 CREATE INDEX idx_comments_review_id ON comments(review_id);
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
 CREATE INDEX idx_comments_author_id ON comments(author_id);
+
+CREATE TYPE notification_type AS ENUM ('reply', 'mention');
+
+CREATE TABLE notifications (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       notification_type NOT NULL,
+    review_id  UUID REFERENCES reviews(id) ON DELETE CASCADE,
+    comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+    actor_id   UUID REFERENCES users(id) ON DELETE SET NULL,
+    read_at    TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_notifications_user_id ON notifications(user_id, read_at);

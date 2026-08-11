@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, setAccessToken } from '../api/client.js';
+import { connectSocket, disconnectSocket } from '../realtime/socket.js';
 
 const AuthContext = createContext(null);
 
@@ -13,11 +14,16 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // The socket connects once here, app-wide, so notifications (and anything
+  // else socket-based) work regardless of which page is mounted — pages
+  // like ReviewDetailPage just join/leave specific rooms on an already-live
+  // connection instead of managing their own connect/disconnect lifecycle.
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
     setAccessToken(data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
+    connectSocket();
     return data.user;
   }, []);
 
@@ -26,6 +32,7 @@ export function AuthProvider({ children }) {
     setAccessToken(data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
+    connectSocket();
     return data.user;
   }, []);
 
@@ -37,6 +44,7 @@ export function AuthProvider({ children }) {
       setAccessToken(null);
       localStorage.removeItem('refreshToken');
       setUser(null);
+      disconnectSocket();
     }
   }, []);
 

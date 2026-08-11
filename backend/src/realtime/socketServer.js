@@ -4,7 +4,7 @@ import { verifyAccessToken } from '../utils/tokens.js';
 import { getReviewOrThrow } from '../controllers/reviewController.js';
 import { env } from '../config/env.js';
 import { createRedisClient } from '../config/redis.js';
-import { setIo, reviewRoom } from './ioRegistry.js';
+import { setIo, reviewRoom, userRoom } from './ioRegistry.js';
 import { setTyping, clearTyping, getTypists } from './typingStore.js';
 
 async function broadcastTyping(io, reviewId) {
@@ -48,6 +48,12 @@ export function createSocketServer(httpServer) {
   });
 
   io.on('connection', (socket) => {
+    // Every connection auto-joins its own user room so notificationController
+    // (via the notifications service) can push 'notification:new' to
+    // "whoever user X is right now", on any tab/device, without the client
+    // having to ask for it.
+    socket.join(userRoom(socket.user.id));
+
     // A socket only ever sits in one review room at a time in this UI, so
     // track it here instead of asking the client to send reviewId on every event.
     let currentReviewId = null;

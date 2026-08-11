@@ -5,10 +5,13 @@ import ProjectsPage from './pages/ProjectsPage.jsx';
 import ProjectDetailPage from './pages/ProjectDetailPage.jsx';
 import ReviewDetailPage from './pages/ReviewDetailPage.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AppHeader from './components/AppHeader.jsx';
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <AppHeader />
+      <Routes>
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -36,6 +39,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-    </Routes>
+      </Routes>
+    </>
   );
 }

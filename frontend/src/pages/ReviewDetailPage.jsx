@@ -4,7 +4,7 @@ import Editor from '@monaco-editor/react';
 import { api } from '../api/client.js';
 import { detectLanguage } from '../utils/detectLanguage.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { connectSocket, disconnectSocket } from '../realtime/socket.js';
+import { getSocket } from '../realtime/socket.js';
 import CommentThread from '../components/CommentThread.jsx';
 import RevisionDiffView from '../components/RevisionDiffView.jsx';
 
@@ -94,10 +94,10 @@ export default function ReviewDetailPage() {
   }, [reviewId]);
 
   // Socket.io: join the review's room, listen for live comments and typing
-  // updates from other clients. One connection per mounted page, torn down
-  // on unmount/reviewId change.
+  // updates from other clients. The connection itself is app-wide (see
+  // AuthContext) — this page only joins/leaves this review's room on it.
   useEffect(() => {
-    const socket = connectSocket();
+    const socket = getSocket();
     socketRef.current = socket;
 
     function join() {
@@ -132,7 +132,6 @@ export default function ReviewDetailPage() {
       socket.off('comment:resolved', handleCommentResolved);
       socket.off('review:revision', handleNewRevision);
       clearTimeout(typingTimeoutRef.current);
-      disconnectSocket();
     };
   }, [reviewId, user?.id]);
 

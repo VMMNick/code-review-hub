@@ -120,3 +120,12 @@ frontend/   React (Vite), react-router, axios
 - Створення рев'ю тепер пише в `reviews` і `review_revisions` в одній транзакції (`BEGIN`/`COMMIT` через виділений `client` з пулу) — рев'ю ніколи не існує без хоча б однієї ревізії.
 - `GET /api/reviews/:id/revisions` — легкий список (без `code_snapshot`, щоб не тягнути потенційно сотні КБ на кожну ревізію заради селектора версій), `GET /api/reviews/:id/revisions/:revisionId` — повний код однієї ревізії, `POST /api/reviews/:id/revisions` — запушити нову версію (лише автор рев'ю або `admin` проєкту), з live-сповіщенням `review:revision` через Socket.io.
 - Фронтенд: `RevisionDiffView.jsx` на Monaco `DiffEditor` (той самий пакет `@monaco-editor/react`, без окремої diff-бібліотеки) — вибір "було"/"стало" з дропдаунів, side-by-side порівняння. Перемикач "Показати diff версій" у `ReviewDetailPage`.
+
+### Нотифікації (згадки/відповіді)
+
+- Нова таблиця `notifications` (`type`: `reply` | `mention`, `user_id`, `actor_id`, `review_id`, `comment_id`, `read_at`) + ENUM `notification_type` у схемі, `backend/db/migrations/003_notifications.sql` для існуючих БД.
+- `backend/src/services/notifications.js`: `notifyReply` — сповіщає автора коментаря, на який відповіли (пропускається, якщо відповідає сам собі); `notifyMentions` — парсить `@handle` у тексті коментаря (`/@([a-zA-Z0-9._-]+)/g`), зіставляє з `email`-локал-частиною учасників проєкту (`u.email.split('@')[0]`), сповіщає всіх знайдених. Обидві викликаються з `createComment` у `try/catch` — збій сповіщення (е.г. Redis недоступний) не валить сам коментар.
+- `GET /api/notifications` (останні 50, з іменем автора дії та назвою рев'ю через JOIN), `PATCH /api/notifications/:id/read`, `PATCH /api/notifications/read-all`.
+- Live-доставка: кожен сокет після підключення автоприєднується до кімнати `user:{id}` (`userRoom()` у `ioRegistry.js`, виклик у `socketServer.js`); нове сповіщення пушиться подією `notification:new` в цю кімнату.
+- Життєвий цикл Socket.io-з'єднання переїхав з `ReviewDetailPage` у `AuthContext` (`connectSocket()` у `login`/`register`, `disconnectSocket()` у `logout`) — сповіщення мають працювати, поки користувач залогінений, а не лише на сторінці конкретного рев'ю. `ReviewDetailPage` тепер бере вже живий сокет через `getSocket()` і не керує його підключенням/відключенням.
+- Фронтенд: `NotificationBell.jsx` (дропдаун, бейдж непрочитаних, клік → позначити прочитаним і перейти на рев'ю, "позначити всі прочитаними") та `AppHeader.jsx` (постійний хедер з навігацією, іменем користувача, дзвіночком і виходом), підключені в `App.jsx`.

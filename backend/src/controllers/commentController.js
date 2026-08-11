@@ -4,6 +4,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { getReviewOrThrow } from './reviewController.js';
 import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
 import { sanitizePlainText } from '../utils/sanitize.js';
+import { notifyReply, notifyMentions } from '../services/notifications.js';
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -37,22 +38,24 @@ export async function createComment(req, res, next) {
     const review = await getReviewOrThrow(req.params.reviewId, req.user.id);
     const { content, lineNumber, parentId } = createCommentSchema.parse(req.body);
 
+    let parent = null;
     if (parentId) {
       const { rows } = await pool.query(
-        'SELECT id, review_id FROM comments WHERE id = $1',
+        'SELECT id, review_id, author_id FROM comments WHERE id = $1',
         [parentId]
       );
-      const parent = rows[0];
+      parent = rows[0];
       if (!parent || parent.review_id !== review.id) {
         throw new HttpError(400, 'parentId must reference a comment on the same review');
       }
     }
 
+    const cleanContent = sanitizePlainText(content, { fieldName: 'content' });
     const { rows } = await pool.query(
       `INSERT INTO comments (review_id, line_number, author_id, content, parent_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [review.id, lineNumber ?? null, req.user.id, sanitizePlainText(content, { fieldName: 'content' }), parentId ?? null]
+      [review.id, lineNumber ?? null, req.user.id, cleanContent, parentId ?? null]
     );
     const comment = { ...rows[0], author_name: req.user.name ?? req.user.email };
 
@@ -62,6 +65,26 @@ export async function createComment(req, res, next) {
     // that sidesteps races where the REST response and the socket event
     // arrive in either order.
     getIo()?.to(reviewRoom(review.id)).emit('comment:new', comment);
+
+    // Notifications are best-effort: the comment is already committed, so a
+    // failure here shouldn't turn a successful 201 into a 500.
+    try {
+      await notifyReply({
+        parentAuthorId: parent?.author_id,
+        reviewId: review.id,
+        commentId: comment.id,
+        actorId: req.user.id
+      });
+      await notifyMentions({
+        content: cleanContent,
+        projectId: review.project_id,
+        reviewId: review.id,
+        commentId: comment.id,
+        actorId: req.user.id
+      });
+    } catch (notifyErr) {
+      console.error('Failed to create notifications for comment', comment.id, notifyErr);
+    }
 
     res.status(201).json(comment);
   } catch (err) {
