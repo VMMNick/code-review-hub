@@ -64,6 +64,23 @@ describe('POST /api/auth/refresh and /logout validation', () => {
   });
 });
 
+describe('GET /api/docs/openapi.json', () => {
+  it('serves a valid OpenAPI document', async () => {
+    const res = await request(app).get('/api/docs/openapi.json');
+    expect(res.status).toBe(200);
+    expect(res.body.openapi).toBe('3.0.3');
+    expect(res.body.paths['/auth/login']).toBeDefined();
+  });
+});
+
+describe('GET /api/docs', () => {
+  it('serves the Swagger UI HTML page', async () => {
+    const res = await request(app).get('/api/docs/');
+    expect(res.status).toBe(200);
+    expect(res.type).toBe('text/html');
+  });
+});
+
 describe('protected routes without a token', () => {
   it('rejects GET /api/projects with 401', async () => {
     const res = await request(app).get('/api/projects');

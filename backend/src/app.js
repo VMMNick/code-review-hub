@@ -3,9 +3,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import rateLimit from 'express-rate-limit';
+import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { Sentry, initSentry, isSentryEnabled } from './config/sentry.js';
+import { openapiSpec } from './docs/openapiSpec.js';
 import authRoutes from './routes/authRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import reviewDetailRoutes from './routes/reviewDetailRoutes.js';
@@ -43,6 +45,21 @@ export function createApp() {
   app.use(rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+  // Raw spec (handy for generating a Postman/Insomnia collection or an SDK)
+  // plus an interactive Swagger UI page. Helmet's default CSP blocks the
+  // inline <script> Swagger UI's HTML shell uses to bootstrap itself, so the
+  // CSP header is stripped for this path only — nothing sensitive is served here.
+  app.get('/api/docs/openapi.json', (req, res) => res.json(openapiSpec));
+  app.use(
+    '/api/docs',
+    (req, res, next) => {
+      res.removeHeader('Content-Security-Policy');
+      next();
+    },
+    swaggerUi.serve,
+    swaggerUi.setup(openapiSpec)
+  );
 
   app.use('/api/auth', authRoutes);
   app.use('/api/projects', projectRoutes);

@@ -10,4 +10,5 @@ createSocketServer(httpServer);
 
 httpServer.listen(env.port, () => {
   logger.info(`API + WebSocket listening on http://localhost:${env.port}`);
+  logger.info(`API docs at http://localhost:${env.port}/api/docs`);
 });
