@@ -13,7 +13,13 @@ export function createApp() {
   const app = express();
 
   app.use(helmet());
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
+  // No CSRF middleware here on purpose: auth is a JWT sent in the
+  // Authorization header (see requireAuth), read from localStorage on the
+  // client — never a cookie. Browsers only auto-attach cookies cross-site,
+  // so a forged cross-origin request can't reproduce that header; CSRF
+  // tokens only matter for cookie-based sessions. `credentials: true` is
+  // dropped below for the same reason — nothing here relies on cookies.
+  app.use(cors({ origin: env.corsOrigin }));
   app.use(express.json({ limit: '2mb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 

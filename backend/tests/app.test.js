@@ -38,6 +38,30 @@ describe('POST /api/auth/register validation', () => {
       .send({ email: 'a@example.com', password: 'short', name: 'Коля' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects a name that is only markup, before ever touching the database', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'a@example.com', password: 'longenough', name: '<script>alert(1)</script>' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/auth/refresh and /logout validation', () => {
+  it('rejects a missing refreshToken on /refresh with 400', async () => {
+    const res = await request(app).post('/api/auth/refresh').send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-string refreshToken on /refresh with 400, not a raw exception', async () => {
+    const res = await request(app).post('/api/auth/refresh').send({ refreshToken: { not: 'a string' } });
+    expect(res.status).toBe(400);
+  });
+
+  it('allows /logout with no body at all', async () => {
+    const res = await request(app).post('/api/auth/logout').send();
+    expect(res.status).toBe(204);
+  });
 });
 
 describe('protected routes without a token', () => {

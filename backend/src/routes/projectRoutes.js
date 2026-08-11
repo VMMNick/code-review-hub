@@ -1,12 +1,17 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { writeLimiter } from '../middleware/rateLimiters.js';
+import { validateUuidParam } from '../middleware/validateParams.js';
 import * as projectController from '../controllers/projectController.js';
 import reviewRoutes from './reviewRoutes.js';
 
 const router = Router();
 
 router.use(requireAuth);
+
+router.param('id', validateUuidParam('id'));
+router.param('userId', validateUuidParam('userId'));
+router.param('projectId', validateUuidParam('projectId'));
 
 router.get('/', projectController.listProjects);
 router.post('/', writeLimiter, projectController.createProject);

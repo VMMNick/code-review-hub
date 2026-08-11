@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { sanitizePlainText } from '../utils/sanitize.js';
 
 const createProjectSchema = z.object({
   name: z.string().min(1).max(255)
@@ -53,7 +54,7 @@ export async function createProject(req, res, next) {
     const { name } = createProjectSchema.parse(req.body);
     const { rows } = await pool.query(
       `INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING *`,
-      [name, req.user.id]
+      [sanitizePlainText(name, { fieldName: 'name' }), req.user.id]
     );
     const project = rows[0];
     await pool.query(
@@ -84,7 +85,7 @@ export async function updateProject(req, res, next) {
     const { name } = createProjectSchema.parse(req.body);
     const { rows } = await pool.query(
       `UPDATE projects SET name = $1 WHERE id = $2 RETURNING *`,
-      [name, project.id]
+      [sanitizePlainText(name, { fieldName: 'name' }), project.id]
     );
     res.json(rows[0]);
   } catch (err) {

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
+import { validateUuidParam } from '../middleware/validateParams.js';
 import * as reviewController from '../controllers/reviewController.js';
 import commentRoutes from './commentRoutes.js';
 
@@ -9,6 +10,9 @@ import commentRoutes from './commentRoutes.js';
 const router = Router();
 
 router.use(requireAuth);
+
+router.param('id', validateUuidParam('id'));
+router.param('reviewId', validateUuidParam('reviewId'));
 
 router.get('/:id', reviewController.getReview);
 router.patch('/:id/status', reviewController.updateReviewStatus);

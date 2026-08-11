@@ -18,8 +18,10 @@ async function stopTyping(io, reviewId, socketId) {
 }
 
 export function createSocketServer(httpServer) {
+  // Same reasoning as app.js: auth is a JWT in the handshake payload, not a
+  // cookie, so `credentials: true` isn't needed here either.
   const io = new Server(httpServer, {
-    cors: { origin: env.corsOrigin, credentials: true }
+    cors: { origin: env.corsOrigin }
   });
 
   // The Redis adapter fans io.to(room).emit(...) out across every WS server

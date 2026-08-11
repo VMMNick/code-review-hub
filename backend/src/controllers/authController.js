@@ -10,6 +10,7 @@ import {
   refreshExpiryDate
 } from '../utils/tokens.js';
 import { cacheSession, getCachedSession, invalidateSession } from '../services/sessionCache.js';
+import { sanitizePlainText } from '../utils/sanitize.js';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -20,6 +21,17 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1)
+});
+
+// refreshToken is opaque (not a JWT), but it must still be a bounded string
+// before it reaches hashToken()/crypto — an object or oversized value there
+// would throw an uncaught TypeError instead of a clean 400.
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1).max(512)
+});
+
+const logoutSchema = z.object({
+  refreshToken: z.string().min(1).max(512).optional()
 });
 
 const REFRESH_TTL_SECONDS = env.jwt.refreshTtlDays * 24 * 60 * 60;
@@ -48,6 +60,7 @@ async function issueTokenPair(user) {
 export async function register(req, res, next) {
   try {
     const { email, password, name } = registerSchema.parse(req.body);
+    const cleanName = sanitizePlainText(name, { fieldName: 'name' });
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rowCount > 0) {
@@ -59,7 +72,7 @@ export async function register(req, res, next) {
       `INSERT INTO users (email, password_hash, name, role)
        VALUES ($1, $2, $3, 'author')
        RETURNING id, email, name, role, created_at`,
-      [email, passwordHash, name]
+      [email, passwordHash, cleanName]
     );
     const user = rows[0];
     const tokens = await issueTokenPair(user);
@@ -91,8 +104,7 @@ export async function login(req, res, next) {
 
 export async function refresh(req, res, next) {
   try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) throw new HttpError(400, 'refreshToken is required');
+    const { refreshToken } = refreshSchema.parse(req.body);
 
     const tokenHash = hashToken(refreshToken);
 
@@ -132,7 +144,7 @@ export async function refresh(req, res, next) {
 
 export async function logout(req, res, next) {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = logoutSchema.parse(req.body ?? {});
     if (refreshToken) {
       const tokenHash = hashToken(refreshToken);
       await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1', [tokenHash]);

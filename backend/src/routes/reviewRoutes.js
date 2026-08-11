@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { writeLimiter } from '../middleware/rateLimiters.js';
+import { validateUuidParam } from '../middleware/validateParams.js';
 import * as reviewController from '../controllers/reviewController.js';
 
 const router = Router({ mergeParams: true });
+
+router.param('id', validateUuidParam('id'));
 
 router.get('/', reviewController.listReviews);
 router.post('/', writeLimiter, reviewController.createReview);

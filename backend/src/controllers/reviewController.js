@@ -2,10 +2,20 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { assertProjectAccess } from './projectController.js';
+import { sanitizePlainText } from '../utils/sanitize.js';
+
+// 500,000 chars (~500KB) caps a single review's code so one request can't
+// tie up the DB/response payload indefinitely. This is a field-level limit
+// with a clean validation error, on top of (not instead of) the blunter
+// express.json({ limit }) body-size cap in app.js.
+const MAX_CODE_SNAPSHOT_LENGTH = 500_000;
 
 const createReviewSchema = z.object({
   title: z.string().min(1).max(255),
-  codeSnapshot: z.string().min(1)
+  codeSnapshot: z.string().min(1).max(
+    MAX_CODE_SNAPSHOT_LENGTH,
+    `Code snapshot too large (max ${MAX_CODE_SNAPSHOT_LENGTH.toLocaleString()} characters)`
+  )
 });
 
 const updateStatusSchema = z.object({
@@ -32,7 +42,10 @@ export async function createReview(req, res, next) {
     const { rows } = await pool.query(
       `INSERT INTO reviews (project_id, title, code_snapshot, author_id)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.params.projectId, title, codeSnapshot, req.user.id]
+      // codeSnapshot deliberately isn't run through sanitizePlainText — it's
+      // source code rendered verbatim in Monaco, not HTML, so stripping tags
+      // would corrupt any HTML/JSX/XML file under review.
+      [req.params.projectId, sanitizePlainText(title, { fieldName: 'title' }), codeSnapshot, req.user.id]
     );
     res.status(201).json(rows[0]);
   } catch (err) {

@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { getReviewOrThrow } from './reviewController.js';
 import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
+import { sanitizePlainText } from '../utils/sanitize.js';
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -49,7 +50,7 @@ export async function createComment(req, res, next) {
       `INSERT INTO comments (review_id, line_number, author_id, content, parent_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [review.id, lineNumber ?? null, req.user.id, content, parentId ?? null]
+      [review.id, lineNumber ?? null, req.user.id, sanitizePlainText(content, { fieldName: 'content' }), parentId ?? null]
     );
     const comment = { ...rows[0], author_name: req.user.name ?? req.user.email };
 
