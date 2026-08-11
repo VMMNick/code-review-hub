@@ -1,10 +1,12 @@
 import { useState } from 'react';
 
 // Renders one top-level comment plus its replies (one level of threading,
-// matching the flat parent_id model in the comments table).
-export default function CommentThread({ comment, replies, onReply }) {
+// matching the flat parent_id model in the comments table). Resolved state
+// lives only on the top-level comment.
+export default function CommentThread({ comment, replies, onReply, onToggleResolved }) {
   const [replying, setReplying] = useState(false);
   const [text, setText] = useState('');
+  const isResolved = Boolean(comment.resolved_at);
 
   async function handleReply(e) {
     e.preventDefault();
@@ -15,12 +17,24 @@ export default function CommentThread({ comment, replies, onReply }) {
   }
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 4, padding: 8, marginBottom: 8 }}>
-      <p style={{ margin: 0 }}>
-        <strong>{comment.author_name}</strong>{' '}
-        <span style={{ color: '#888', fontSize: 12 }}>
-          {new Date(comment.created_at).toLocaleString('uk-UA')}
+    <div
+      style={{
+        border: '1px solid #ddd',
+        borderRadius: 4,
+        padding: 8,
+        marginBottom: 8,
+        opacity: isResolved ? 0.6 : 1,
+        background: isResolved ? '#f6fff6' : 'transparent'
+      }}
+    >
+      <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <span>
+          <strong>{comment.author_name}</strong>{' '}
+          <span style={{ color: '#888', fontSize: 12 }}>
+            {new Date(comment.created_at).toLocaleString('uk-UA')}
+          </span>
         </span>
+        {isResolved && <span style={{ color: '#2e7d32', fontSize: 12 }}>✓ вирішено</span>}
       </p>
       <p style={{ whiteSpace: 'pre-wrap' }}>{comment.content}</p>
 
@@ -55,9 +69,14 @@ export default function CommentThread({ comment, replies, onReply }) {
           </div>
         </form>
       ) : (
-        <button type="button" onClick={() => setReplying(true)}>
-          Відповісти
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => setReplying(true)}>
+            Відповісти
+          </button>
+          <button type="button" onClick={() => onToggleResolved(comment.id, !isResolved)}>
+            {isResolved ? 'Повернути в роботу' : 'Позначити вирішеним'}
+          </button>
+        </div>
       )}
     </div>
   );

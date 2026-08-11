@@ -53,6 +53,7 @@ export default function ReviewDetailPage() {
   const [activeLine, setActiveLine] = useState(null);
   const [lineCommentText, setLineCommentText] = useState('');
   const [generalCommentText, setGeneralCommentText] = useState('');
+  const [hideResolved, setHideResolved] = useState(false);
   const [error, setError] = useState(null);
   const typingTimeoutRef = useRef(null);
   const socketRef = useRef(null);
@@ -96,14 +97,19 @@ export default function ReviewDetailPage() {
     function handleTypingUpdate({ typists: list }) {
       setTypists(list.filter((t) => t.userId !== user?.id));
     }
+    function handleCommentResolved({ id, resolved_at, resolved_by }) {
+      setComments((prev) => prev.map((c) => (c.id === id ? { ...c, resolved_at, resolved_by } : c)));
+    }
     socket.on('comment:new', handleNewComment);
     socket.on('typing:update', handleTypingUpdate);
+    socket.on('comment:resolved', handleCommentResolved);
 
     return () => {
       socket.emit('review:leave');
       socket.off('connect', join);
       socket.off('comment:new', handleNewComment);
       socket.off('typing:update', handleTypingUpdate);
+      socket.off('comment:resolved', handleCommentResolved);
       clearTimeout(typingTimeoutRef.current);
       disconnectSocket();
     };
@@ -160,12 +166,21 @@ export default function ReviewDetailPage() {
     setComments((prev) => addCommentDeduped(prev, data));
   }
 
+  async function handleToggleResolved(commentId, resolved) {
+    const { data } = await api.patch(`/reviews/${reviewId}/comments/${commentId}/resolved`, { resolved });
+    setComments((prev) =>
+      prev.map((c) => (c.id === commentId ? { ...c, resolved_at: data.resolved_at, resolved_by: data.resolved_by } : c))
+    );
+  }
+
   if (error) return <p role="alert">{error}</p>;
   if (!review) return <p>Завантаження…</p>;
 
   const { byLine, repliesByParent } = groupComments(comments);
-  const activeLineComments = activeLine ? byLine.get(activeLine) ?? [] : [];
-  const generalComments = byLine.get('general') ?? [];
+  const visibleComments = hideResolved ? comments.filter((c) => !c.resolved_at) : comments;
+  const { byLine: visibleByLine } = groupComments(visibleComments);
+  const activeLineComments = activeLine ? visibleByLine.get(activeLine) ?? [] : [];
+  const generalComments = visibleByLine.get('general') ?? [];
   const typistsOnActiveLine = typists.filter((t) => t.lineNumber === activeLine);
   const typistsGeneral = typists.filter((t) => t.lineNumber === null);
 
@@ -207,6 +222,15 @@ export default function ReviewDetailPage() {
       </div>
 
       <div style={{ flex: 1, maxHeight: '80vh', overflowY: 'auto' }}>
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={hideResolved}
+            onChange={(e) => setHideResolved(e.target.checked)}
+          />{' '}
+          Приховати вирішені
+        </label>
+
         <h2>{activeLine ? `Коментарі до рядка ${activeLine}` : 'Клацніть на рядок коду, щоб прокоментувати'}</h2>
 
         {activeLine && (
@@ -240,6 +264,7 @@ export default function ReviewDetailPage() {
                 comment={c}
                 replies={repliesByParent.get(c.id) ?? []}
                 onReply={handleReply}
+                onToggleResolved={handleToggleResolved}
               />
             ))}
             {activeLineComments.length === 0 && <p>Ще немає коментарів до цього рядка.</p>}

@@ -11,6 +11,8 @@ const createCommentSchema = z.object({
   parentId: z.string().uuid().nullable().optional()
 });
 
+const setResolvedSchema = z.object({ resolved: z.boolean() });
+
 // Returned as a flat list ordered by created_at; the client groups by
 // line_number and threads replies under their parent using parent_id.
 export async function listComments(req, res, next) {
@@ -62,6 +64,44 @@ export async function createComment(req, res, next) {
     getIo()?.to(reviewRoom(review.id)).emit('comment:new', comment);
 
     res.status(201).json(comment);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Resolved state lives only on the top-level comment — a thread is
+// resolved or it isn't, replies don't get their own state. Any project
+// member can toggle it (same bar as posting a comment at all), not just
+// the original author, since resolving is usually done by whoever fixed
+// the issue, which may not be who's replying.
+export async function setCommentResolved(req, res, next) {
+  try {
+    const review = await getReviewOrThrow(req.params.reviewId, req.user.id);
+    const { resolved } = setResolvedSchema.parse(req.body);
+
+    const { rows } = await pool.query(
+      'SELECT * FROM comments WHERE id = $1 AND review_id = $2',
+      [req.params.commentId, review.id]
+    );
+    const comment = rows[0];
+    if (!comment) throw new HttpError(404, 'Comment not found');
+    if (comment.parent_id) {
+      throw new HttpError(400, 'Only a top-level comment can be marked resolved');
+    }
+
+    const { rows: updated } = await pool.query(
+      `UPDATE comments SET resolved_at = $1, resolved_by = $2 WHERE id = $3 RETURNING *`,
+      [resolved ? new Date() : null, resolved ? req.user.id : null, comment.id]
+    );
+    const result = updated[0];
+
+    getIo()?.to(reviewRoom(review.id)).emit('comment:resolved', {
+      id: result.id,
+      resolved_at: result.resolved_at,
+      resolved_by: result.resolved_by
+    });
+
+    res.json(result);
   } catch (err) {
     next(err);
   }

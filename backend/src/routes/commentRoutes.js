@@ -13,6 +13,7 @@ router.param('commentId', validateUuidParam('commentId'));
 
 router.get('/', commentController.listComments);
 router.post('/', writeLimiter, commentController.createComment);
+router.patch('/:commentId/resolved', writeLimiter, commentController.setCommentResolved);
 router.delete('/:commentId', commentController.deleteComment);
 
 export default router;

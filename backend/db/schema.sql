@@ -61,6 +61,11 @@ CREATE TABLE comments (
     author_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content     TEXT NOT NULL,
     parent_id   UUID REFERENCES comments(id) ON DELETE CASCADE,
+    -- "Resolved" applies to a whole thread — only meaningful on a top-level
+    -- comment (parent_id IS NULL); replies inherit the parent's state in
+    -- the API/UI rather than tracking their own.
+    resolved_at TIMESTAMPTZ,
+    resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_comments_review_id ON comments(review_id);
