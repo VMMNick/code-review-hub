@@ -5,6 +5,7 @@ import { getReviewOrThrow } from './reviewController.js';
 import { getIo, reviewRoom } from '../realtime/ioRegistry.js';
 import { sanitizePlainText } from '../utils/sanitize.js';
 import { notifyReply, notifyMentions } from '../services/notifications.js';
+import { logger } from '../config/logger.js';
 
 const createCommentSchema = z.object({
   content: z.string().min(1).max(10000),
@@ -120,7 +121,7 @@ export async function createComment(req, res, next) {
         actorId: req.user.id
       });
     } catch (notifyErr) {
-      console.error('Failed to create notifications for comment', comment.id, notifyErr);
+      logger.error({ err: notifyErr, commentId: comment.id }, 'Failed to create notifications for comment');
     }
 
     res.status(201).json(comment);

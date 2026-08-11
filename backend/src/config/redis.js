@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { env } from './env.js';
+import { logger } from './logger.js';
 
 // A dedicated client per role: the Socket.io Redis adapter needs its own
 // pub/sub connections (a subscribed connection can't run normal commands),
@@ -11,5 +12,5 @@ export function createRedisClient() {
 }
 
 redisClient.on('error', (err) => {
-  console.error('Redis error:', err.message);
+  logger.error({ err: err.message }, 'Redis error');
 });

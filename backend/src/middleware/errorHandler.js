@@ -1,4 +1,6 @@
 import { ZodError } from 'zod';
+import { logger } from '../config/logger.js';
+import { Sentry, isSentryEnabled } from '../config/sentry.js';
 
 export function notFoundHandler(req, res) {
   res.status(404).json({ error: 'Not found' });
@@ -12,8 +14,16 @@ export function errorHandler(err, req, res, next) { // eslint-disable-line no-un
   if (err instanceof ZodError) {
     return res.status(400).json({ error: 'Validation failed', details: err.issues });
   }
-  console.error(err);
   const status = err.status ?? 500;
+  if (status >= 500) {
+    // Only unexpected (5xx) errors are worth an ERROR-level log entry and a
+    // Sentry event — expected 4xx failures (bad input, missing auth, etc.)
+    // are normal traffic, not incidents.
+    logger.error({ err, path: req.path, method: req.method }, 'Unhandled error');
+    if (isSentryEnabled()) Sentry.captureException(err);
+  } else {
+    logger.warn({ status, path: req.path, method: req.method, message: err.message }, 'Request error');
+  }
   res.status(status).json({ error: err.publicMessage ?? 'Internal server error' });
 }
 
