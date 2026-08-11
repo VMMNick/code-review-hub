@@ -32,21 +32,31 @@ const addRevisionSchema = z.object({
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/;
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 const listReviewsQuerySchema = z.object({
   status: z.enum(['open', 'approved', 'changes_requested']).optional(),
   authorId: z.string().uuid().optional(),
   dateFrom: z.string().regex(isoDatePattern, 'dateFrom must be YYYY-MM-DD or ISO 8601').optional(),
   dateTo: z.string().regex(isoDatePattern, 'dateTo must be YYYY-MM-DD or ISO 8601').optional(),
-  q: z.string().min(1).max(255).optional()
+  q: z.string().min(1).max(255).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional()
 });
 
 // Filters are all optional query params: ?status=&authorId=&dateFrom=&dateTo=&q=
 // Built as a parameterized WHERE clause (never string-interpolated) so
 // there's no SQL injection surface even though the filter set is dynamic.
+// Paginated (?page=&limit=, 1-indexed, default 20/page, max 100/page) so a
+// project with thousands of reviews doesn't ship them all in one response.
 export async function listReviews(req, res, next) {
   try {
     await assertProjectAccess(req.params.projectId, req.user.id);
     const filters = listReviewsQuerySchema.parse(req.query);
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = (page - 1) * limit;
 
     const conditions = ['project_id = $1'];
     const params = [req.params.projectId];
@@ -72,11 +82,22 @@ export async function listReviews(req, res, next) {
       conditions.push(`title ILIKE $${params.length}`);
     }
 
-    const { rows } = await pool.query(
-      `SELECT * FROM reviews WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+    const where = conditions.join(' AND ');
+    const { rows: countRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM reviews WHERE ${where}`,
       params
     );
-    res.json(rows);
+    const total = countRows[0].total;
+
+    const { rows } = await pool.query(
+      `SELECT * FROM reviews WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+
+    res.json({
+      reviews: rows,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
   } catch (err) {
     next(err);
   }

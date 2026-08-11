@@ -14,20 +14,57 @@ const createCommentSchema = z.object({
 
 const setResolvedSchema = z.object({ resolved: z.boolean() });
 
-// Returned as a flat list ordered by created_at; the client groups by
-// line_number and threads replies under their parent using parent_id.
+const DEFAULT_THREAD_PAGE_SIZE = 20;
+const MAX_THREAD_PAGE_SIZE = 100;
+
+const listCommentsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_THREAD_PAGE_SIZE).optional()
+});
+
+// Paginated by *thread* (top-level comment), not by raw row, so a page never
+// splits a thread across two pages — each page returns whole threads (the
+// top-level comment plus all of its replies), oldest-first. Reviews with a
+// modest number of threads still get every reply on the first page; this
+// only matters once a review accumulates many discussion threads.
 export async function listComments(req, res, next) {
   try {
     await getReviewOrThrow(req.params.reviewId, req.user.id);
-    const { rows } = await pool.query(
-      `SELECT c.*, u.name AS author_name
-       FROM comments c
-       JOIN users u ON u.id = c.author_id
-       WHERE c.review_id = $1
-       ORDER BY c.created_at ASC`,
+    const { page: pageInput, limit: limitInput } = listCommentsQuerySchema.parse(req.query);
+    const page = pageInput ?? 1;
+    const limit = limitInput ?? DEFAULT_THREAD_PAGE_SIZE;
+    const offset = (page - 1) * limit;
+
+    const { rows: countRows } = await pool.query(
+      'SELECT COUNT(*)::int AS total FROM comments WHERE review_id = $1 AND parent_id IS NULL',
       [req.params.reviewId]
     );
-    res.json(rows);
+    const total = countRows[0].total;
+
+    const { rows: topLevel } = await pool.query(
+      `SELECT id FROM comments WHERE review_id = $1 AND parent_id IS NULL
+       ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+      [req.params.reviewId, limit, offset]
+    );
+    const topLevelIds = topLevel.map((r) => r.id);
+
+    let rows = [];
+    if (topLevelIds.length > 0) {
+      const { rows: threadRows } = await pool.query(
+        `SELECT c.*, u.name AS author_name
+         FROM comments c
+         JOIN users u ON u.id = c.author_id
+         WHERE c.review_id = $1 AND (c.id = ANY($2) OR c.parent_id = ANY($2))
+         ORDER BY c.created_at ASC`,
+        [req.params.reviewId, topLevelIds]
+      );
+      rows = threadRows;
+    }
+
+    res.json({
+      comments: rows,
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    });
   } catch (err) {
     next(err);
   }

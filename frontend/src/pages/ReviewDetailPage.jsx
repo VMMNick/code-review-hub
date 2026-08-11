@@ -60,13 +60,22 @@ export default function ReviewDetailPage() {
   const [diffMode, setDiffMode] = useState(false);
   const [newRevisionCode, setNewRevisionCode] = useState('');
   const [showPushForm, setShowPushForm] = useState(false);
+  const [commentPagination, setCommentPagination] = useState({ page: 1, totalPages: 1 });
   const typingTimeoutRef = useRef(null);
   const socketRef = useRef(null);
 
-  const loadComments = useCallback(async () => {
-    const { data } = await api.get(`/reviews/${reviewId}/comments`);
-    setComments(data);
-  }, [reviewId]);
+  // Comments are paginated by thread on the backend (page=1 returns the
+  // first 20 threads, oldest-first). This page loads page 1 up front and
+  // exposes a "load more" action that appends further pages — comments
+  // already loaded (e.g. via a live socket event) aren't refetched.
+  const loadComments = useCallback(
+    async (page = 1) => {
+      const { data } = await api.get(`/reviews/${reviewId}/comments`, { params: { page } });
+      setComments((prev) => (page === 1 ? data.comments : [...prev, ...data.comments]));
+      setCommentPagination(data.pagination);
+    },
+    [reviewId]
+  );
 
   const loadRevisions = useCallback(async () => {
     const { data } = await api.get(`/reviews/${reviewId}/revisions`);
@@ -77,14 +86,15 @@ export default function ReviewDetailPage() {
     let cancelled = false;
     Promise.all([
       api.get(`/reviews/${reviewId}`),
-      api.get(`/reviews/${reviewId}/comments`),
+      api.get(`/reviews/${reviewId}/comments`, { params: { page: 1 } }),
       api.get(`/reviews/${reviewId}/revisions`)
     ])
       .then(([reviewRes, commentsRes, revisionsRes]) => {
         if (cancelled) return;
         setReview(reviewRes.data);
         setLanguage(detectLanguage(reviewRes.data.title));
-        setComments(commentsRes.data);
+        setComments(commentsRes.data.comments);
+        setCommentPagination(commentsRes.data.pagination);
         setRevisions(revisionsRes.data);
       })
       .catch(() => !cancelled && setError('Не вдалося завантажити рев\'ю'));
@@ -92,6 +102,10 @@ export default function ReviewDetailPage() {
       cancelled = true;
     };
   }, [reviewId]);
+
+  function handleLoadMoreComments() {
+    loadComments(commentPagination.page + 1);
+  }
 
   // Socket.io: join the review's room, listen for live comments and typing
   // updates from other clients. The connection itself is app-wide (see
@@ -366,6 +380,12 @@ export default function ReviewDetailPage() {
             onReply={handleReply}
           />
         ))}
+
+        {commentPagination.page < commentPagination.totalPages && (
+          <button type="button" onClick={handleLoadMoreComments}>
+            Завантажити старіші треди ({commentPagination.page}/{commentPagination.totalPages})
+          </button>
+        )}
       </div>
     </div>
   );

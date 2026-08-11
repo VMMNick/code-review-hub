@@ -17,6 +17,8 @@ export default function ProjectDetailPage() {
 
   const [filters, setFilters] = useState({ status: '', authorId: '', dateFrom: '', dateTo: '', q: '' });
   const [searchInput, setSearchInput] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
 
   useEffect(() => {
     api.get(`/projects/${projectId}/members`).then(({ data }) => setMembers(data));
@@ -31,10 +33,19 @@ export default function ProjectDetailPage() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
+  // Filters reset back to page 1 — a stale page number from a previous,
+  // larger result set could otherwise land past the end of a narrower one.
   useEffect(() => {
-    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
-    api.get(`/projects/${projectId}/reviews`, { params }).then(({ data }) => setReviews(data));
-  }, [projectId, filters]);
+    setPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    const params = { ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), page, limit: 20 };
+    api.get(`/projects/${projectId}/reviews`, { params }).then(({ data }) => {
+      setReviews(data.reviews);
+      setPagination(data.pagination);
+    });
+  }, [projectId, filters, page]);
 
   function updateFilter(field) {
     return (e) => setFilters((prev) => ({ ...prev, [field]: e.target.value }));
@@ -43,7 +54,7 @@ export default function ProjectDetailPage() {
   async function handleCreate(e) {
     e.preventDefault();
     const { data } = await api.post(`/projects/${projectId}/reviews`, { title, codeSnapshot });
-    setReviews((prev) => [data, ...prev]);
+    if (page === 1) setReviews((prev) => [data, ...prev]);
     setTitle('');
     setCodeSnapshot('');
   }
@@ -104,6 +115,21 @@ export default function ProjectDetailPage() {
         ))}
         {reviews.length === 0 && <li>Нічого не знайдено</li>}
       </ul>
+
+      {pagination.totalPages > 1 && (
+        <div>
+          <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            ← Назад
+          </button>
+          <span>
+            {' '}
+            Сторінка {pagination.page} з {pagination.totalPages} ({pagination.total} рев'ю){' '}
+          </span>
+          <button type="button" disabled={page >= pagination.totalPages} onClick={() => setPage((p) => p + 1)}>
+            Далі →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
