@@ -1,32 +1,35 @@
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { verifyAccessToken } from '../utils/tokens.js';
 import { getReviewOrThrow } from '../controllers/reviewController.js';
 import { env } from '../config/env.js';
+import { createRedisClient } from '../config/redis.js';
 import { setIo, reviewRoom } from './ioRegistry.js';
+import { setTyping, clearTyping, getTypists } from './typingStore.js';
 
-// In-memory "who is typing where" per review, keyed by review id then socket
-// id. Good enough for a single process; horizontal scaling (multiple
-// WS servers) needs this moved to Redis pub/sub — that's Тиждень 6.
-const typingByReview = new Map(); // reviewId -> Map<socketId, { userId, name, lineNumber }>
-
-function broadcastTyping(io, reviewId) {
-  const typists = typingByReview.get(reviewId);
-  const list = typists ? Array.from(typists.values()) : [];
-  io.to(reviewRoom(reviewId)).emit('typing:update', { reviewId, typists: list });
+async function broadcastTyping(io, reviewId) {
+  const typists = await getTypists(reviewId);
+  io.to(reviewRoom(reviewId)).emit('typing:update', { reviewId, typists });
 }
 
-function clearTyping(io, reviewId, socketId) {
-  const typists = typingByReview.get(reviewId);
-  if (!typists || !typists.has(socketId)) return;
-  typists.delete(socketId);
-  if (typists.size === 0) typingByReview.delete(reviewId);
-  broadcastTyping(io, reviewId);
+async function stopTyping(io, reviewId, socketId) {
+  await clearTyping(reviewId, socketId);
+  await broadcastTyping(io, reviewId);
 }
 
 export function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: { origin: env.corsOrigin, credentials: true }
   });
+
+  // The Redis adapter fans io.to(room).emit(...) out across every WS server
+  // instance via pub/sub, so 'comment:new' and 'typing:update' reach clients
+  // regardless of which process they're connected to. A subscribed Redis
+  // connection can't run other commands, so pub/sub gets its own two
+  // connections separate from the general-purpose cache client.
+  const pubClient = createRedisClient();
+  const subClient = pubClient.duplicate();
+  io.adapter(createAdapter(pubClient, subClient));
 
   // Handshake auth: client sends the JWT access token, not a cookie/header,
   // since Socket.io's transport doesn't reuse the axios interceptor.
@@ -52,7 +55,7 @@ export function createSocketServer(httpServer) {
         await getReviewOrThrow(reviewId, socket.user.id); // throws if no access
         if (currentReviewId && currentReviewId !== reviewId) {
           socket.leave(reviewRoom(currentReviewId));
-          clearTyping(io, currentReviewId, socket.id);
+          await stopTyping(io, currentReviewId, socket.id);
         }
         currentReviewId = reviewId;
         socket.join(reviewRoom(reviewId));
@@ -62,31 +65,30 @@ export function createSocketServer(httpServer) {
       }
     });
 
-    socket.on('review:leave', () => {
+    socket.on('review:leave', async () => {
       if (!currentReviewId) return;
       socket.leave(reviewRoom(currentReviewId));
-      clearTyping(io, currentReviewId, socket.id);
+      await stopTyping(io, currentReviewId, socket.id);
       currentReviewId = null;
     });
 
-    socket.on('typing:start', ({ lineNumber } = {}) => {
+    socket.on('typing:start', async ({ lineNumber } = {}) => {
       if (!currentReviewId) return;
-      if (!typingByReview.has(currentReviewId)) typingByReview.set(currentReviewId, new Map());
-      typingByReview.get(currentReviewId).set(socket.id, {
+      await setTyping(currentReviewId, socket.id, {
         userId: socket.user.id,
         name: socket.user.name ?? socket.user.email,
         lineNumber: lineNumber ?? null
       });
-      broadcastTyping(io, currentReviewId);
+      await broadcastTyping(io, currentReviewId);
     });
 
-    socket.on('typing:stop', () => {
+    socket.on('typing:stop', async () => {
       if (!currentReviewId) return;
-      clearTyping(io, currentReviewId, socket.id);
+      await stopTyping(io, currentReviewId, socket.id);
     });
 
-    socket.on('disconnect', () => {
-      if (currentReviewId) clearTyping(io, currentReviewId, socket.id);
+    socket.on('disconnect', async () => {
+      if (currentReviewId) await stopTyping(io, currentReviewId, socket.id);
     });
   });
 

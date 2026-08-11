@@ -2,12 +2,14 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { HttpError } from '../middleware/errorHandler.js';
+import { env } from '../config/env.js';
 import {
   signAccessToken,
   generateRefreshToken,
   hashToken,
   refreshExpiryDate
 } from '../utils/tokens.js';
+import { cacheSession, getCachedSession, invalidateSession } from '../services/sessionCache.js';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -20,13 +22,26 @@ const loginSchema = z.object({
   password: z.string().min(1)
 });
 
+const REFRESH_TTL_SECONDS = env.jwt.refreshTtlDays * 24 * 60 * 60;
+
 async function issueTokenPair(user) {
   const accessToken = signAccessToken(user);
   const refreshToken = generateRefreshToken();
+  const tokenHash = hashToken(refreshToken);
+
+  // Postgres is the source of truth for revocation/expiry; Redis is a
+  // best-effort read cache so the common refresh path can skip the DB join.
   await pool.query(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-    [user.id, hashToken(refreshToken), refreshExpiryDate()]
+    [user.id, tokenHash, refreshExpiryDate()]
   );
+  await cacheSession(tokenHash, {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    name: user.name
+  }, REFRESH_TTL_SECONDS);
+
   return { accessToken, refreshToken };
 }
 
@@ -80,22 +95,34 @@ export async function refresh(req, res, next) {
     if (!refreshToken) throw new HttpError(400, 'refreshToken is required');
 
     const tokenHash = hashToken(refreshToken);
-    const { rows } = await pool.query(
-      `SELECT rt.*, u.id AS user_id, u.email, u.role, u.name
-       FROM refresh_tokens rt
-       JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1`,
-      [tokenHash]
-    );
-    const record = rows[0];
-    if (!record || record.revoked_at || new Date(record.expires_at) < new Date()) {
-      throw new HttpError(401, 'Invalid or expired refresh token');
+
+    // Fast path: session cached in Redis means the token was valid and
+    // unexpired as of when it was issued/last refreshed (cache TTL mirrors
+    // the DB expiry) — skip the Postgres join entirely.
+    let user = await getCachedSession(tokenHash);
+
+    if (!user) {
+      const { rows } = await pool.query(
+        `SELECT rt.*, u.id AS user_id, u.email, u.role, u.name
+         FROM refresh_tokens rt
+         JOIN users u ON u.id = rt.user_id
+         WHERE rt.token_hash = $1`,
+        [tokenHash]
+      );
+      const record = rows[0];
+      if (!record || record.revoked_at || new Date(record.expires_at) < new Date()) {
+        throw new HttpError(401, 'Invalid or expired refresh token');
+      }
+      user = { userId: record.user_id, email: record.email, role: record.role, name: record.name };
     }
 
-    // Rotate: revoke old, issue new pair
-    await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1', [record.id]);
-    const user = { id: record.user_id, email: record.email, role: record.role, name: record.name };
-    const tokens = await issueTokenPair(user);
+    // Rotate: revoke the old token (by hash — no DB round trip needed to
+    // fetch its id) and drop it from the cache so replaying it fails closed
+    // via the Postgres fallback above.
+    await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1', [tokenHash]);
+    await invalidateSession(tokenHash);
+
+    const tokens = await issueTokenPair({ id: user.userId, email: user.email, role: user.role, name: user.name });
 
     res.json({ ...tokens });
   } catch (err) {
@@ -107,10 +134,9 @@ export async function logout(req, res, next) {
   try {
     const { refreshToken } = req.body;
     if (refreshToken) {
-      await pool.query(
-        'UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1',
-        [hashToken(refreshToken)]
-      );
+      const tokenHash = hashToken(refreshToken);
+      await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1', [tokenHash]);
+      await invalidateSession(tokenHash);
     }
     res.status(204).send();
   } catch (err) {

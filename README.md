@@ -57,11 +57,17 @@ frontend/   React (Vite), react-router, axios
 - Один HTTP-сервер (`http.createServer`) для Express і Socket.io (`backend/src/server.js`), автентифікація хендшейку через JWT access token (`socket.handshake.auth.token`).
 - Кімнати `review:{id}`: клієнт приєднується через `review:join`, доступ перевіряється тим самим `getReviewOrThrow`, що й REST.
 - Live-коментарі: після INSERT `commentController` емітить `comment:new` у кімнату рев'ю. Дублікатів немає завдяки дедуплікації за `id` на клієнті (comment id — з БД, унікальний), а не спробам вирахувати "чий це сокет" на сервері — це прибирає race condition між REST-відповіддю і сокет-подією незалежно від порядку їх приходу.
-- Індикатор "хтось друкує": `typing:start`/`typing:stop` за (reviewId, lineNumber), стан тримається в пам'яті процесу (`Map` у `backend/src/realtime/socketServer.js`), автоочищення через 2с бездіяльності і на `disconnect`. Масштабування на кілька WS-серверів через Redis pub/sub — Тиждень 6.
+- Індикатор "хтось друкує": `typing:start`/`typing:stop` за (reviewId, lineNumber), автоочищення через 2с бездіяльності і на `disconnect`.
 - Фронтенд: `frontend/src/realtime/socket.js` — єдиний `socket.io-client`, підключення лежить у `ReviewDetailPage`; proxy `/socket.io` додано у `vite.config.js`.
+
+## Тиждень 6: Redis — кеш сесій і pub/sub між WS-серверами
+
+- **Кеш сесій** (`backend/src/services/sessionCache.js`): на кожен виданий refresh-token у Redis кешується `{userId, email, role, name}` з TTL = `JWT_REFRESH_TTL_DAYS`. `/auth/refresh` спершу читає з Redis (без JOIN у Postgres); при промаху йде в Postgres, як і раніше. Postgres (`refresh_tokens`) лишається джерелом істини для відкликання — кеш видаляється при ротації/logout, тож повторне використання вже спожитого токена все одно ловиться через фолбек у БД.
+- **Pub/sub для Socket.io** (`backend/src/realtime/socketServer.js`): підключено `@socket.io/redis-adapter` з окремими pub/sub-з'єднаннями (`createRedisClient()` у `backend/src/config/redis.js`, дубльоване під sub). Тепер `io.to(room).emit(...)` — і `comment:new`, і `typing:update` — доходить до клієнтів незалежно від того, до якого з кількох WS-процесів вони підключені.
+- **Стан "хтось друкує" переїхав з in-memory `Map` у Redis** (`backend/src/realtime/typingStore.js`, hash `typing:{reviewId}`) — без цього кожен процес бачив би лише своїх локальних тайпістів і перезаписував би загальний список чужими неповними даними. TTL хеша (10с) самовідновлюється при кожному `typing:start`, як страховка на випадок аварійного завершення процесу без події `disconnect`.
+- `docker-compose.yml` — Postgres + Redis для локальної розробки (сервіси backend/frontend додаються повністю на Тижні 8).
 
 ## Далі за планом
 
-- Тиждень 6: Redis — кеш сесій, pub/sub між WS-серверами
 - Тиждень 7: ролі/права (частково закладено — `role` на users і `project_members`), rate-limiting (вже підключено express-rate-limit на auth і глобально)
 - Тиждень 8: Docker Compose, Jest/RTL тести, деплой

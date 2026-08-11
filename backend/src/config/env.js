@@ -12,6 +12,7 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   databaseUrl: required('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/code_review_hub'),
+  redisUrl: required('REDIS_URL', 'redis://localhost:6379'),
   jwt: {
     accessSecret: required('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
     refreshSecret: required('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
