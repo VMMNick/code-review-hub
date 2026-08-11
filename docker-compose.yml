@@ -42,6 +42,9 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Optional — leave unset on the host to disable Sentry entirely.
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
