@@ -49,55 +49,31 @@ export default function NotificationBell() {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" onClick={handleOpen} aria-label="Сповіщення">
-        🔔{unreadCount > 0 && <sup>{unreadCount}</sup>}
+    <div className="notif-wrapper">
+      <button type="button" className="notif-trigger" onClick={handleOpen} aria-label="Сповіщення">
+        🔔
+        {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
       </button>
 
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: '100%',
-            width: 320,
-            maxHeight: 400,
-            overflowY: 'auto',
-            background: 'white',
-            border: '1px solid #ddd',
-            borderRadius: 4,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            zIndex: 10
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: 8, borderBottom: '1px solid #eee' }}>
+        <div className="notif-panel">
+          <div className="notif-panel-header">
             <strong>Сповіщення</strong>
-            <button type="button" onClick={handleMarkAllRead}>
-              Позначити всі прочитаними
+            <button type="button" className="btn-sm btn-ghost" onClick={handleMarkAllRead}>
+              Прочитати всі
             </button>
           </div>
-          {notifications.length === 0 && <p style={{ padding: 8 }}>Немає сповіщень.</p>}
+          {notifications.length === 0 && <p style={{ padding: 16, margin: 0 }}>Немає сповіщень.</p>}
           {notifications.map((n) => (
             <button
               key={n.id}
               type="button"
               onClick={() => handleClick(n)}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: 8,
-                border: 'none',
-                borderBottom: '1px solid #f0f0f0',
-                background: n.read_at ? 'white' : '#eef6ff',
-                cursor: 'pointer'
-              }}
+              className={`notif-item${n.read_at ? '' : ' unread'}`}
             >
               <strong>{n.actor_name ?? 'Хтось'}</strong> {TYPE_LABELS[n.type] ?? n.type}
               {n.review_title && <> у «{n.review_title}»</>}
-              <div style={{ color: '#888', fontSize: 12 }}>
-                {new Date(n.created_at).toLocaleString('uk-UA')}
-              </div>
+              <div className="notif-time">{new Date(n.created_at).toLocaleString('uk-UA')}</div>
             </button>
           ))}
         </div>

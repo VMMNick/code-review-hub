@@ -14,14 +14,14 @@ export default function AppHeader() {
   }
 
   return (
-    <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderBottom: '1px solid #eee' }}>
-      <nav>
-        <Link to="/projects">Проєкти</Link>
-      </nav>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span>{user.name}</span>
+    <header className="app-header">
+      <Link to="/projects" className="brand">
+        Code Review Hub
+      </Link>
+      <div className="row">
+        <span className="user-chip">{user.name}</span>
         <NotificationBell />
-        <button type="button" onClick={handleLogout}>
+        <button type="button" className="btn-ghost btn-sm" onClick={handleLogout}>
           Вийти
         </button>
       </div>

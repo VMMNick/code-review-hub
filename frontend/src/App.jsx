@@ -11,6 +11,7 @@ export default function App() {
   return (
     <>
       <AppHeader />
+      <div className="page">
       <Routes>
       <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/login" element={<LoginPage />} />
@@ -40,6 +41,7 @@ export default function App() {
         }
       />
       </Routes>
+      </div>
     </>
   );
 }

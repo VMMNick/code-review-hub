@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function LoginPage() {
@@ -21,18 +21,25 @@ export default function LoginPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h1>Вхід</h1>
-      {error && <p role="alert">{error}</p>}
-      <label>
-        Email
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </label>
-      <label>
-        Пароль
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-      </label>
-      <button type="submit">Увійти</button>
-    </form>
+    <div className="auth-page">
+      <div className="auth-card">
+        <form onSubmit={handleSubmit}>
+          <h1>Вхід</h1>
+          {error && <p role="alert">{error}</p>}
+          <label>
+            Email
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+          <label>
+            Пароль
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </label>
+          <button type="submit">Увійти</button>
+        </form>
+        <p className="auth-switch">
+          Немає акаунту? <Link to="/register">Зареєструватися</Link>
+        </p>
+      </div>
+    </div>
   );
 }

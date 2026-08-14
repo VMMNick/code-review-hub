@@ -35,9 +35,9 @@ export default function RevisionDiffView({ reviewId, revisions, language }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
+      <div className="diff-toolbar">
         <label>
-          Було:{' '}
+          Було
           <select value={leftId} onChange={(e) => setLeftId(e.target.value)}>
             {revisions.map((r) => (
               <option key={r.id} value={r.id}>
@@ -47,7 +47,7 @@ export default function RevisionDiffView({ reviewId, revisions, language }) {
           </select>
         </label>
         <label>
-          Стало:{' '}
+          Стало
           <select value={rightId} onChange={(e) => setRightId(e.target.value)}>
             {revisions.map((r) => (
               <option key={r.id} value={r.id}>
@@ -57,14 +57,16 @@ export default function RevisionDiffView({ reviewId, revisions, language }) {
           </select>
         </label>
       </div>
-      <DiffEditor
-        height="65vh"
-        language={language}
-        original={leftCode}
-        modified={rightCode}
-        theme="vs-dark"
-        options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 13 }}
-      />
+      <div className="editor-frame">
+        <DiffEditor
+          height="65vh"
+          language={language}
+          original={leftCode}
+          modified={rightCode}
+          theme="vs-dark"
+          options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 13 }}
+        />
+      </div>
     </div>
   );
 }

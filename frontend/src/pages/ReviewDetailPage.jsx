@@ -229,17 +229,19 @@ export default function ReviewDetailPage() {
   const typistsGeneral = typists.filter((t) => t.lineNumber === null);
 
   return (
-    <div style={{ display: 'flex', gap: 16 }}>
-      <div style={{ flex: 2 }}>
-        <p>
-          <Link to={`/projects/${review.project_id}`}>← до проєкту</Link>
-        </p>
+    <div className="review-layout">
+      <div className="review-main">
+        <Link to={`/projects/${review.project_id}`} className="back-link">
+          ← до проєкту
+        </Link>
         <h1>{review.title}</h1>
-        <p>Статус: {review.status}</p>
+        <p className="review-status">
+          Статус: <span className={`badge badge-${review.status}`}>{review.status}</span>
+        </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div className="review-toolbar">
           <label>
-            Мова підсвітки{' '}
+            Мова підсвітки
             <select value={language} onChange={(e) => setLanguage(e.target.value)}>
               {LANGUAGE_OPTIONS.map((lang) => (
                 <option key={lang} value={lang}>
@@ -249,21 +251,21 @@ export default function ReviewDetailPage() {
             </select>
           </label>
 
-          <button type="button" onClick={() => setDiffMode((v) => !v)} disabled={revisions.length < 2}>
+          <button type="button" className="btn-sm" onClick={() => setDiffMode((v) => !v)} disabled={revisions.length < 2}>
             {diffMode ? 'Показати поточний код' : 'Показати diff версій'}
           </button>
 
           {(review.author_id === user?.id || review.projectRole === 'admin') && (
-            <button type="button" onClick={() => setShowPushForm((v) => !v)}>
+            <button type="button" className="btn-sm" onClick={() => setShowPushForm((v) => !v)}>
               {showPushForm ? 'Скасувати' : 'Надіслати нову версію коду'}
             </button>
           )}
 
-          <span style={{ color: '#888', fontSize: 12 }}>Версій: {revisions.length}</span>
+          <span className="review-meta">Версій: {revisions.length}</span>
         </div>
 
         {showPushForm && (
-          <form onSubmit={handlePushRevision} style={{ marginTop: 8 }}>
+          <form className="push-revision-form" onSubmit={handlePushRevision}>
             <textarea
               value={newRevisionCode}
               onChange={(e) => setNewRevisionCode(e.target.value)}
@@ -280,31 +282,33 @@ export default function ReviewDetailPage() {
         {diffMode ? (
           <RevisionDiffView reviewId={reviewId} revisions={revisions} language={language} />
         ) : (
-          <Editor
-            height="70vh"
-            language={language}
-            value={review.code_snapshot}
-            theme="vs-dark"
-            onMount={handleEditorMount}
-            options={{
-              readOnly: true,
-              minimap: { enabled: false },
-              lineNumbers: 'on',
-              wordWrap: 'on',
-              fontSize: 13,
-              glyphMargin: true
-            }}
-          />
+          <div className="editor-frame">
+            <Editor
+              height="70vh"
+              language={language}
+              value={review.code_snapshot}
+              theme="vs-dark"
+              onMount={handleEditorMount}
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                wordWrap: 'on',
+                fontSize: 13,
+                glyphMargin: true
+              }}
+            />
+          </div>
         )}
       </div>
 
-      <div style={{ flex: 1, maxHeight: '80vh', overflowY: 'auto' }}>
-        <label style={{ display: 'block', marginBottom: 8 }}>
+      <div className="review-sidebar card">
+        <label className="checkbox-row">
           <input
             type="checkbox"
             checked={hideResolved}
             onChange={(e) => setHideResolved(e.target.checked)}
-          />{' '}
+          />
           Приховати вирішені
         </label>
 
@@ -312,7 +316,7 @@ export default function ReviewDetailPage() {
 
         {activeLine && (
           <>
-            <form onSubmit={handleAddLineComment}>
+            <form className="comment-composer" onSubmit={handleAddLineComment}>
               <textarea
                 value={lineCommentText}
                 onChange={(e) => {
@@ -324,15 +328,13 @@ export default function ReviewDetailPage() {
                 placeholder={`Коментар до рядка ${activeLine}… (підтримується Markdown)`}
                 required
               />
-              <div>
-                <button type="submit">Додати коментар</button>
+              <div className="actions">
+                <button type="submit" className="btn-sm">Додати коментар</button>
               </div>
             </form>
 
             {typistsOnActiveLine.length > 0 && (
-              <p style={{ color: '#888', fontStyle: 'italic' }}>
-                {typistsOnActiveLine.map((t) => t.name).join(', ')} зараз друкує…
-              </p>
+              <p className="typing-hint">{typistsOnActiveLine.map((t) => t.name).join(', ')} зараз друкує…</p>
             )}
 
             {activeLineComments.map((c) => (
@@ -349,7 +351,7 @@ export default function ReviewDetailPage() {
         )}
 
         <h2>Загальне обговорення</h2>
-        <form onSubmit={handleAddGeneralComment}>
+        <form className="comment-composer" onSubmit={handleAddGeneralComment}>
           <textarea
             value={generalCommentText}
             onChange={(e) => {
@@ -361,15 +363,13 @@ export default function ReviewDetailPage() {
             placeholder="Загальний коментар до рев'ю… (підтримується Markdown)"
             required
           />
-          <div>
-            <button type="submit">Додати</button>
+          <div className="actions">
+            <button type="submit" className="btn-sm">Додати</button>
           </div>
         </form>
 
         {typistsGeneral.length > 0 && (
-          <p style={{ color: '#888', fontStyle: 'italic' }}>
-            {typistsGeneral.map((t) => t.name).join(', ')} зараз друкує…
-          </p>
+          <p className="typing-hint">{typistsGeneral.map((t) => t.name).join(', ')} зараз друкує…</p>
         )}
 
         {generalComments.map((c) => (
@@ -383,7 +383,7 @@ export default function ReviewDetailPage() {
         ))}
 
         {commentPagination.page < commentPagination.totalPages && (
-          <button type="button" onClick={handleLoadMoreComments}>
+          <button type="button" className="btn-sm" onClick={handleLoadMoreComments}>
             Завантажити старіші треди ({commentPagination.page}/{commentPagination.totalPages})
           </button>
         )}

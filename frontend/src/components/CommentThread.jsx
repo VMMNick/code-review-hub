@@ -18,35 +18,22 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
   }
 
   return (
-    <div
-      style={{
-        border: '1px solid #ddd',
-        borderRadius: 4,
-        padding: 8,
-        marginBottom: 8,
-        opacity: isResolved ? 0.6 : 1,
-        background: isResolved ? '#f6fff6' : 'transparent'
-      }}
-    >
-      <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+    <div className={`comment-thread${isResolved ? ' resolved' : ''}`}>
+      <div className="comment-head">
         <span>
-          <strong>{comment.author_name}</strong>{' '}
-          <span style={{ color: '#888', fontSize: 12 }}>
-            {new Date(comment.created_at).toLocaleString('uk-UA')}
-          </span>
+          <span className="comment-author">{comment.author_name}</span>
+          <span className="comment-time">{new Date(comment.created_at).toLocaleString('uk-UA')}</span>
         </span>
-        {isResolved && <span style={{ color: '#2e7d32', fontSize: 12 }}>✓ вирішено</span>}
-      </p>
+        {isResolved && <span className="comment-resolved-flag">✓ вирішено</span>}
+      </div>
       <CommentMarkdown content={comment.content} />
 
       {replies.length > 0 && (
-        <div style={{ marginLeft: 16, borderLeft: '2px solid #eee', paddingLeft: 8 }}>
+        <div className="comment-replies">
           {replies.map((r) => (
-            <div key={r.id} style={{ marginBottom: 6 }}>
-              <strong>{r.author_name}</strong>{' '}
-              <span style={{ color: '#888', fontSize: 12 }}>
-                {new Date(r.created_at).toLocaleString('uk-UA')}
-              </span>
+            <div key={r.id}>
+              <span className="comment-author">{r.author_name}</span>
+              <span className="comment-time">{new Date(r.created_at).toLocaleString('uk-UA')}</span>
               <CommentMarkdown content={r.content} />
             </div>
           ))}
@@ -54,7 +41,7 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
       )}
 
       {replying ? (
-        <form onSubmit={handleReply}>
+        <form className="comment-reply-form" onSubmit={handleReply}>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -62,16 +49,16 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
             placeholder="Відповісти…"
             autoFocus
           />
-          <div>
-            <button type="submit">Відповісти</button>
-            <button type="button" onClick={() => setReplying(false)}>
+          <div className="actions">
+            <button type="submit" className="btn-sm">Відповісти</button>
+            <button type="button" className="btn-sm btn-ghost" onClick={() => setReplying(false)}>
               Скасувати
             </button>
           </div>
         </form>
       ) : (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={() => setReplying(true)}>
+        <div className="comment-actions">
+          <button type="button" className="btn-sm btn-ghost" onClick={() => setReplying(true)}>
             Відповісти
           </button>
           {/* Guarded: only top-level comments can be resolved (backend
@@ -80,7 +67,7 @@ export default function CommentThread({ comment, replies, onReply, onToggleResol
               threw if clicked without one, which happened to affect every
               general (non-line) comment until this prop was wired up. */}
           {onToggleResolved && !comment.parent_id && (
-            <button type="button" onClick={() => onToggleResolved(comment.id, !isResolved)}>
+            <button type="button" className="btn-sm btn-ghost" onClick={() => onToggleResolved(comment.id, !isResolved)}>
               {isResolved ? 'Повернути в роботу' : 'Позначити вирішеним'}
             </button>
           )}

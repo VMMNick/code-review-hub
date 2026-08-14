@@ -17,22 +17,8 @@ export default function CommentMarkdown({ content }) {
         components={{
           // Keep links from silently navigating away in the same tab.
           a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-          code: ({ node, inline, ...props }) =>
-            inline ? (
-              <code style={{ background: '#f0f0f0', padding: '1px 4px', borderRadius: 3 }} {...props} />
-            ) : (
-              <code
-                style={{
-                  display: 'block',
-                  background: '#f5f5f5',
-                  padding: 8,
-                  borderRadius: 4,
-                  overflowX: 'auto',
-                  fontSize: 13
-                }}
-                {...props}
-              />
-            )
+          code: ({ node, inline, ...props }) => <code {...props} />,
+          pre: ({ node, ...props }) => <pre {...props} />
         }}
       >
         {content}
