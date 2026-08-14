@@ -2,13 +2,26 @@ import Redis from 'ioredis';
 import { env } from './env.js';
 import { logger } from './logger.js';
 
+// enableOfflineQueue: false is the fix for a very slow-motion version of
+// the crash bug fixed earlier. With the (default) offline queue enabled,
+// any command issued while disconnected gets queued and retried up to
+// maxRetriesPerRequest (20) times with increasing backoff before it finally
+// rejects — measured locally at 40-110 SECONDS per request during a Redis
+// outage. Our try/catch in cache.js/sessionCache.js/typingStore.js still
+// caught the eventual rejection and fell back correctly, but only after
+// that entire multi-second-to-multi-minute wait, making the app feel
+// completely broken even though nothing crashed. With the queue disabled,
+// a command issued while disconnected fails immediately (synchronously
+// rejected), so the fallback to Postgres kicks in right away instead.
+const clientOptions = { lazyConnect: false, enableOfflineQueue: false };
+
 // A dedicated client per role: the Socket.io Redis adapter needs its own
 // pub/sub connections (a subscribed connection can't run normal commands),
 // so we keep those separate from the general-purpose cache client.
-export const redisClient = new Redis(env.redisUrl, { lazyConnect: false });
+export const redisClient = new Redis(env.redisUrl, clientOptions);
 
 export function createRedisClient() {
-  return new Redis(env.redisUrl, { lazyConnect: false });
+  return new Redis(env.redisUrl, clientOptions);
 }
 
 // ioredis retries a lost connection forever by default (desired — we want
