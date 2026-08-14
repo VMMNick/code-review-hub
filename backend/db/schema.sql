@@ -1,5 +1,3 @@
--- Платформа код-рев'ю — схема БД (PostgreSQL)
-
 CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- для gen_random_uuid()
 
 CREATE TYPE user_role AS ENUM ('admin', 'reviewer', 'author');
